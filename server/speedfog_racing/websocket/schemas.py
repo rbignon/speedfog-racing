@@ -187,21 +187,15 @@ class RelayMember(BaseModel):
 
 # The wire range of a CharacterState integer: what the mod's integer types hold,
 # so a stored state always deserializes there (a team replays it at every
-# take). Event flags fit an i32 like the other values; an item id keeps its
-# category nibble in the top bits, the u32 of the protocol's other item ids.
+# take). Event flags fit an i32.
 CharacterStateInt = Annotated[int, Field(ge=0, le=2**31 - 1)]
-CharacterStateItem = Annotated[int, Field(ge=0, le=2**32 - 1)]
 
 
 class CharacterState(BaseModel):
-    """What a relay handoff carries of a character, in the order the game stores it."""
+    """What a relay handoff carries: the lit graces, nothing of the character
+    (each runner keeps their own). A state stored or sent with other fields
+    reads as its graces, the rest is ignored."""
 
-    # Vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane.
-    attributes: list[CharacterStateInt] = Field(min_length=8, max_length=8)
-    level: CharacterStateInt
-    runes: CharacterStateInt
-    # Raw item ids with their category nibble, only the transferable ones, each once.
-    items: list[CharacterStateItem] = Field(default_factory=list, max_length=4000)
     # Event flags of the lit graces.
     grace_flags: list[CharacterStateInt] = Field(default_factory=list, max_length=1000)
 
@@ -840,7 +834,7 @@ class RelayUpdateMessage(BaseModel):
 
 
 class RelayReleaseMessage(BaseModel):
-    """Server to mod (the holder): send your state, lock, go to the Chapel."""
+    """Server to mod (the holder): send your state, lock, go to the Roundtable Hold."""
 
     type: Literal["relay_release"] = "relay_release"
     handoff_id: str
@@ -871,7 +865,7 @@ class RelayRefusedMessage(BaseModel):
 
 
 class RelayReadyMessage(BaseModel):
-    """Mod to server: a waiting runner is (or stops being) loaded at the Chapel
+    """Mod to server: a waiting runner is (or stops being) loaded at the Roundtable Hold
     with its lock raised."""
 
     type: Literal["relay_ready"] = "relay_ready"

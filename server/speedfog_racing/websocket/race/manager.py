@@ -108,7 +108,7 @@ class RaceRoom:
 
     # Serializes the baton operations of this race's relay teams.
     relay_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
-    # Relay members loaded at the Chapel with their lock raised (their last
+    # Relay members loaded at the Roundtable Hold with their lock raised (their last
     # `relay_ready` was true). Used under relay_lock; dropped whenever the
     # member's current socket goes (disconnect, eviction, replacement).
     relay_ready: set[uuid.UUID] = field(default_factory=set, repr=False, compare=False)

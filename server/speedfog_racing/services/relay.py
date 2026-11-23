@@ -61,7 +61,7 @@ RELAY_REFUSAL_MESSAGES: dict[RelayRefusal, str] = {
     RelayRefusal.TARGET_AT_CAP: "This teammate has reached their zone quota",
     RelayRefusal.AT_CAP: "You have reached your zone quota",
     RelayRefusal.HOLDER_ONLINE: "The baton cannot be taken yet",
-    RelayRefusal.NOT_READY: "Wait at the Chapel first",
+    RelayRefusal.NOT_READY: "Wait at the Roundtable Hold first",
     RelayRefusal.NOT_VALIDATED: "No fresh save was validated for this runner",
     RelayRefusal.BUSY: "The baton cannot move right now",
 }
@@ -296,7 +296,7 @@ def receive_refusal(
     by the holder (a handoff), which changes the codes and their order.
 
     A member who is out is never available. A handoff target must be connected
-    and ready at the Chapel, then validated; an asker must be validated, then
+    and ready at the Roundtable Hold, then validated; an asker must be validated, then
     ready. Nobody at or over the cap receives the baton, final zone included.
     """
     if member.status in TERMINAL_PARTICIPANT_STATUSES:

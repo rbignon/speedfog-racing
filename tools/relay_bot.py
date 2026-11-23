@@ -82,36 +82,13 @@ FRESH_IGT_MS = 5_000
 OUT_TEAM_STATUSES = ("finished", "abandoned", "disqualified")
 OUT_MEMBER_STATUSES = ("abandoned", "disqualified")
 
-# What a handoff carries of the character when --state names no file:
-# attributes in the game's order, a Vagabond at its starting level (the level
-# is the attribute sum minus 79, or the receiver's mod does not write it).
-FAKE_STATE: dict[str, Any] = {
-    "attributes": [15, 10, 11, 14, 13, 9, 9, 7],
-    "level": 9,
-    "runes": 0,
-    "items": [],
-    "grace_flags": [],
-}
-
-
-def stats_plausible(state: dict[str, Any]) -> bool:
-    """The receiver's mod rule for writing a state's stats: every attribute in
-    1 to 99, the level in 1 to 713 and equal to the attribute sum minus 79,
-    the runes at most 999999999 (mod/src/core/relay_items.rs)."""
-    attributes = state["attributes"]
-    level = state["level"]
-    return (
-        all(1 <= a <= 99 for a in attributes)
-        and 1 <= level <= 713
-        and sum(attributes) == level + 79
-        and state["runes"] <= 999_999_999
-    )
+# What a handoff carries when --state names no file: no lit grace.
+FAKE_STATE: dict[str, Any] = {"grace_flags": []}
 
 
 def load_state(path: Path) -> dict[str, Any]:
-    """The character state in the JSON file ``path`` (attributes, level, runes,
-    items, grace_flags), checked against the server's own model
-    (``CharacterState``) and as that model gives it (absent lists empty).
+    """The state in the JSON file ``path`` (grace_flags), checked against the
+    server's own model (``CharacterState``) and as that model gives it.
     ValueError naming the file and the problem when it cannot be read or is
     not a state the server would accept."""
     from pydantic import ValidationError
@@ -826,11 +803,6 @@ async def main_async(args: argparse.Namespace) -> None:
         state = FAKE_STATE if args.state is None else load_state(args.state)
     except ValueError as e:
         raise SystemExit(str(e)) from e
-    if not stats_plausible(state):
-        log(
-            "warning: the state's level is not its attribute sum minus 79, or a "
-            "value is out of range: the receiver's mod will not write its stats"
-        )
     console = Console(args.race_id, args.ws, teams, state)
     await console.load()
     await console.connect()
@@ -852,8 +824,8 @@ def main() -> None:
     parser.add_argument(
         "--state",
         type=Path,
-        help="a CharacterState JSON file (attributes, level, runes, items, "
-        "grace_flags) the bots hand over at a release instead of the default",
+        help="a CharacterState JSON file (grace_flags) the bots hand over at a "
+        "release instead of the default",
     )
     parser.add_argument(
         "--force", action="store_true", help="allow a non-local database"

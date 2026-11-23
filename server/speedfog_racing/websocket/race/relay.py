@@ -563,7 +563,7 @@ async def _after_flip(
     """Send the take to the receiver (when one is awaited) and tell the team."""
     if flip.pending is not None:
         await room.send_to_mod(flip.target_id, flip.take.model_dump_json())
-    # The giver's mod locks and goes to the Chapel on the role this tells it.
+    # The giver's mod locks and goes to the Roundtable Hold on the role this tells it.
     await send_relay_updates(session_maker, flip.race_id, flip.team_id, graph_json=graph)
 
 
@@ -878,7 +878,7 @@ async def set_ready(
     *,
     graph_json: dict[str, Any] | None = None,
 ) -> None:
-    """A member's ``relay_ready``: whether its mod waits at the Chapel with its
+    """A member's ``relay_ready``: whether its mod waits at the Roundtable Hold with its
     lock raised (``RaceRoom.relay_ready``, read by ``members[].ready`` and by
     the handoff and take checks). The team is told when it changes."""
     async with room.relay_lock:

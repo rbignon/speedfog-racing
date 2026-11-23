@@ -22,7 +22,6 @@ from relay_bot import (
     parse_team,
     request_pass,
     request_take,
-    stats_plausible,
     tick,
 )
 
@@ -31,8 +30,12 @@ MATE = "p-mate"
 FLAGS = {
     "lock_flag": 1050290500,
     "chapel_warp_flag": 1050290501,
+    "travel_lock_flag": 1050290503,
+    "roundtable_warp_flag": 1050290504,
     "warp_flag_base": 1050290510,
     "zone_flag_base": 1050294000,
+    "token_flag_base": 1050297900,
+    "token_bits": 24,
 }
 
 
@@ -128,10 +131,10 @@ def test_bot_answers_a_release_with_its_state(bot: Bot) -> None:
         bot, {"type": "relay_release", "handoff_id": "h1", "to_name": "x"}
     )
     assert out is not None
-    assert (out["type"], out["handoff_id"], len(out["state"]["attributes"])) == (
+    assert (out["type"], out["handoff_id"], out["state"]) == (
         "relay_state",
         "h1",
-        8,
+        FAKE_STATE,
     )
     # The IGT it answers with is the team's, not its own save's.
     assert out["igt_ms"] == 40_000
@@ -325,32 +328,7 @@ def test_finish_warns_unless_the_team_is_at_the_final_boss() -> None:
     assert finish_warning(GRAPH, "final") is None
 
 
-# A level 30 character: attributes summing to 109.
-STATE: dict[str, Any] = {
-    "attributes": [20, 12, 15, 18, 16, 9, 9, 10],
-    "level": 30,
-    "runes": 12_345,
-    "items": [2_000_005, 0x1000_0000 | 40_000, 0x4000_0000 | 4_000],
-    "grace_flags": [71_190, 76_101],
-}
-
-
-def test_the_default_state_is_one_the_receivers_mod_writes() -> None:
-    from speedfog_racing.websocket.schemas import CharacterState
-
-    CharacterState.model_validate(FAKE_STATE)
-    assert stats_plausible(FAKE_STATE)
-
-
-def test_stats_plausible_is_the_mods_stat_rule() -> None:
-    assert stats_plausible(STATE)
-    # The level is the attribute sum minus 79: Vagabond's attributes at level
-    # 1 are no character's.
-    assert not stats_plausible({**FAKE_STATE, "level": 1})
-    assert not stats_plausible({**STATE, "attributes": [0] * 8, "level": 0})
-    assert not stats_plausible({**STATE, "attributes": [100] + [10] * 7, "level": 91})
-    assert not stats_plausible({**STATE, "runes": 1_000_000_000})
-    assert stats_plausible({**STATE, "runes": 999_999_999})
+STATE: dict[str, Any] = {"grace_flags": [71_190, 76_101]}
 
 
 def test_bot_answers_a_release_with_the_state_it_was_given(bot: Bot) -> None:
@@ -366,10 +344,9 @@ def test_load_state_reads_a_valid_file(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text(json.dumps(STATE), encoding="utf-8")
     assert load_state(path) == STATE
-    # The lists may be left out: the server's model gives them empty.
-    bare = {k: STATE[k] for k in ("attributes", "level", "runes")}
-    path.write_text(json.dumps(bare), encoding="utf-8")
-    assert load_state(path) == {**bare, "items": [], "grace_flags": []}
+    # The list may be left out: the server's model gives it empty.
+    path.write_text("{}", encoding="utf-8")
+    assert load_state(path) == {"grace_flags": []}
 
 
 def test_load_state_names_a_missing_file(tmp_path: Path) -> None:
@@ -383,10 +360,8 @@ def test_load_state_refuses_what_the_server_would_drop(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     for bad in (
         "not json",
-        json.dumps({**STATE, "attributes": [10, 10, 10]}),
-        json.dumps({**STATE, "runes": -1}),
-        json.dumps({**STATE, "items": list(range(4001))}),
-        json.dumps({k: STATE[k] for k in ("attributes", "level")}),
+        json.dumps({"grace_flags": [71_190, -1]}),
+        json.dumps({"grace_flags": list(range(1001))}),
     ):
         path.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="not a valid CharacterState"):

@@ -64,13 +64,7 @@ from .relay_fixtures import (
 integration_db = _integration.integration_db
 integration_client = _integration.integration_client
 
-STATE = {
-    "attributes": [10, 10, 10, 10, 10, 10, 10, 10],
-    "level": 9,
-    "runes": 0,
-    "items": [],
-    "grace_flags": [],
-}
+STATE = {"grace_flags": []}
 
 
 def _twelve_layers() -> dict[str, Any]:

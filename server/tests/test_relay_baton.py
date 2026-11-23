@@ -61,14 +61,8 @@ from .relay_fixtures import wait_for_timers as _wait_for_timers
 integration_db = _integration.integration_db
 integration_client = _integration.integration_client
 
-STATE = {
-    "attributes": [40, 20, 25, 30, 14, 9, 9, 7],
-    "level": 68,
-    "runes": 15230,
-    "items": [2000005, 2147493648],
-    "grace_flags": [71000, 76101],
-}
-OTHER_STATE = {**STATE, "level": 70, "runes": 0}
+STATE = {"grace_flags": [71000, 76101]}
+OTHER_STATE = {"grace_flags": [71000]}
 CAP = relay_cap(PROGRESS_TOTAL_LAYERS, 2)
 # The warp flag of the first gate's connection.
 WARP = RELAY_BLOCK["warp_flag_base"] + (FOG_FLAG - RELAY_BLOCK["zone_flag_base"])
@@ -519,14 +513,10 @@ def test_late_or_foreign_relay_state_flips_nothing(monkeypatch, relay_race, mods
 @pytest.mark.parametrize(
     "payload",
     [
-        {"state": {"attributes": [1, 2]}},
-        {"state": {**STATE, "items": list(range(4001))}},
+        {"state": {"grace_flags": list(range(1001))}},
         # Out of the wire range: a stored value would be replayed at every take.
-        {"state": {**STATE, "level": -1}},
-        {"state": {**STATE, "runes": 2**31}},
-        {"state": {**STATE, "attributes": [10] * 7 + [2**31]}},
-        {"state": {**STATE, "grace_flags": [71000, -1]}},
-        {"state": {**STATE, "items": [2**32]}},
+        {"state": {"grace_flags": [71000, -1]}},
+        {"state": {"grace_flags": [2**31]}},
         {"state": "nope"},
         {"state": STATE, "igt_ms": -5},
         {"state": STATE, "igt_ms": "late"},
@@ -546,16 +536,35 @@ def test_malformed_relay_state_is_dropped(relay_race, mods, payload):
 
 
 def test_character_state_takes_the_whole_wire_range():
-    edge = {
-        "attributes": [0] * 7 + [2**31 - 1],
-        "level": 2**31 - 1,
-        "runes": 2**31 - 1,
-        # A gem's id has its category nibble in the top bit: a u32, not an i32.
-        "items": [0, 2**32 - 1],
-        "grace_flags": [2**31 - 1],
-    }
+    edge = {"grace_flags": [0, 2**31 - 1]}
 
     assert CharacterState.model_validate(edge).model_dump() == edge
+
+
+def test_a_state_stored_before_the_revision_still_reads_as_its_graces():
+    old = {
+        "attributes": [40, 20, 25, 30, 14, 9, 9, 7],
+        "level": 68,
+        "runes": 15230,
+        "items": [2000005, 2147493648],
+        "grace_flags": [71000, 76101],
+    }
+    assert CharacterState.model_validate(old).model_dump() == {"grace_flags": [71000, 76101]}
+
+
+def test_a_state_with_stats_on_the_wire_is_stored_as_its_graces(relay_race, mods):
+    holder = mods[_pid(relay_race, 0, 0)]
+    _gate(holder, FOG_FLAG, 40_000, 1)
+    holder.send(
+        {
+            "type": "relay_state",
+            "handoff_id": None,
+            "igt_ms": 80_000,
+            "state": {"level": 68, "grace_flags": [71000]},
+        }
+    )
+    barrier(holder)
+    assert load_team(relay_race).character_state == {"grace_flags": [71000]}
 
 
 def test_checkpoint_is_stored_with_the_team_igt(relay_race, mods):

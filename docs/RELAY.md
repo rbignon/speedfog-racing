@@ -173,15 +173,18 @@ What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py
 - `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, kept between 0 and 60 (a stamp at the race start is in the future during the countdown). A holder absent with no stamp yet (its socket just gone, before its disconnect is recorded) reads the whole 60: the rule is 60 seconds of absence, always.
 - `gates_locked`: a holder whose `relay_zones` reached the team's cap.
 - `zone_name`: the node of `entry_flag_id` in the graph's `event_map`, else the start node.
-- Readiness: `RaceRoom.relay_ready` holds the members loaded at the Chapel with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected). It goes with the member's current socket: a disconnect, an eviction after a failed send or a replacement by a newer socket drops the member from it, and the mod sends `relay_ready` again after every `auth_ok`.
+- Readiness: `RaceRoom.relay_ready` holds the members loaded at the Roundtable Hold with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected). It goes with the member's current socket: a disconnect, an eviction after a failed send or a replacement by a newer socket drops the member from it, and the mod sends `relay_ready` again after every `auth_ok`.
 
 ### Operations
 
 `RelayModHandler` hands the five baton messages to the operations of
 `websocket/race/relay.py`. A payload that does not parse (its pydantic model, the
-`CharacterState` bounds: list lengths, and every integer non-negative, at most
-2^31 - 1, an item id at most 2^32 - 1; an IGT out of range) is dropped, so a stored
-state always fits the mod's types: a team replays it at every take. A refused request gets a
+`CharacterState` bounds: at most 1000 `grace_flags`, each an integer from 0 to
+2^31 - 1; an IGT out of range) is dropped, so a stored state always fits the mod's
+types: a team replays it at every take. `CharacterState` has that single field: a
+handoff carries the lit graces and nothing of the character, each runner keeping
+their own. A state with other fields (one stored before this shape, or sent by an
+older mod) reads as its graces, the rest ignored. A refused request gets a
 `relay_refused` to the asker, the first matching row winning (codes in `RelayRefusal`,
 each with its `RELAY_REFUSAL_MESSAGES` text):
 
@@ -206,7 +209,7 @@ then goes back to them.
   after a crash has something recent.
 - **Any other `relay_state`** (an expired or unknown handoff, or not from the holder)
   flips nothing. From the holder the state is still kept as a checkpoint. The sender
-  gets a `relay_update`, which tells a giver who already went back to the Chapel that it
+  gets a `relay_update`, which tells a giver who already went back to the Roundtable Hold that it
   still holds the baton.
 - **Stored**: `character_state` (the parsed `CharacterState`) and
   `character_state_igt_ms`, the team IGT once raised to the reported IGT. A state
@@ -292,12 +295,12 @@ then goes back to them.
   the entrance of the last zone the team entered through a fog gate. Backtracks never
   move `entry_flag_id`, so a holder who went back hands over the furthest zone.
   `zone_name` names it. Before the team's first gate `warp_flag` is `chapel_warp_flag`
-  (waiting runners are not at the Chapel, so the take brings them there) and
-  `zone_name` is null.
+  (waiting runners are at the Roundtable Hold, so a take before the first gate warps
+  them to the Chapel) and `zone_name` is null.
 - `defeat_flags` (`team_defeat_flags`): the defeat flag of every node the team's
   history marks killed, the current zone's included, sorted. On a takeover the state is
   the last checkpoint, but the flags come from the history: a boss killed after the
-  checkpoint stays dead for the taker, and the runes it gave are lost.
+  checkpoint stays dead for the taker.
 - `igt_ms`: the team's IGT, which the receiver's game takes.
 - Nobody at or over their cap receives the baton, the final zone included.
 
@@ -602,22 +605,11 @@ Each bot is a local user. In setup the tool places them in the named team throug
 - Its role comes from `RelayInfo.role` (`auth_ok`, `relay_update`). It stops once its own member is `abandoned` or `disqualified`, or its team is finished, abandoned or disqualified.
 - Its event flags are numbered as a mod numbers its own: from the tool's launch time in ms, one more per message, one counter for all its bots. They never carry on from the team's history: the server drops a fog flag whose id the team already recorded, a team's history mixes its members' ids, and one more than a mod's last recorded id is the id that mod sends next.
 
-The state a bot hands over is, by default, a Vagabond at its starting level with nothing (level 9, its attribute sum minus 79, so the receiver's mod writes it). `--state FILE` gives every bot the state in `FILE` instead: a `CharacterState` JSON (`attributes`, `level`, `runes`, `items`, `grace_flags`), checked at startup against the server's own model (`CharacterState` in `server/speedfog_racing/websocket/schemas.py`). A file that cannot be read, or that the server would drop, stops the tool with the reason; a state whose stats the receiver's mod would not write (its level not the attribute sum minus 79, a value out of range) starts with a warning. This is how the in-game checklist's take steps (the items, the armor, the flags, the second apply, the tampered state, the quit-out during an apply) hand a real game a chosen state: a bot holder passes the baton to the game's runner, and the server's `relay_take` carries the bot's state. For example, a level 30 character with a Longsword +5, a Moonveil +3, the Kaiden Helm, the Crimson Amber Medallion, Glintstone Pebble, Lone Wolf Ashes, the Crimsonspill Crystal Tear and Ash of War: Lion's Claw (raw ids in decimal, category nibble included):
+The state a bot hands over is, by default, one with no lit grace. `--state FILE` gives every bot the state in `FILE` instead: a `CharacterState` JSON (`grace_flags` only: up to 1000 grace event flags, `BonfireWarpParam.eventflag_id`; the list may be left out), checked at startup against the server's own model (`CharacterState` in `server/speedfog_racing/websocket/schemas.py`). A file that cannot be read, or that the server would drop, stops the tool with the reason. A bot holder passes the baton to the game's runner, and the server's `relay_take` carries the bot's state. For example:
 
 ```json
-{
-  "attributes": [20, 12, 15, 18, 16, 9, 9, 10],
-  "level": 30,
-  "runes": 12345,
-  "items": [
-    2000005, 9060003, 268485456, 536871912, 1073745824, 1073973824, 1073752824,
-    2147493648
-  ],
-  "grace_flags": []
-}
+{ "grace_flags": [71190, 76101] }
 ```
-
-`items` holds up to 4000 ids and `grace_flags` up to 1000 grace event flags (`BonfireWarpParam.eventflag_id`); the lists may be left out.
 
 Two parts are tested. The decisions are the pure `next_action(bot, message)` (the answer to one server message) and `tick(bot)` (what it sends on its own each second), covered by `tools/test_relay_bot.py` (no socket, no database). What the console does in the database is covered by `server/tests/test_relay_bot_console.py`, on SQLite rows: the setup insert (the teams created and named, the bots placed, a refused placement keeping the bots before it), and on a running race the load of bots already in it, then `status`. The listing order is not: SQLite's creation times have a resolution of a second. The same file covers the ids of the event flags the bots send (none taken from the team's history, none shared by two bots). The socket loop and the commands that send have no other test: checklist 0.1 is what runs them against a server (that needs a database at head and a pool regenerated with the relay plugin).
 
