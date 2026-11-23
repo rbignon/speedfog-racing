@@ -271,6 +271,8 @@ async def test_reset_gives_back_fresh_teams_and_members(rs_client, rs_session, o
             ).scalars():
                 m.relay_zones = 3
                 m.relay_validated = True
+                m.relay_token = 4242
+                m.relay_bound = True
             await db.commit()
         reset = await client.post(f"/api/races/{race.id}/reset", headers=_auth(organizer))
     assert reset.status_code == 200
@@ -285,5 +287,11 @@ async def test_reset_gives_back_fresh_teams_and_members(rs_client, rs_session, o
             team.character_state,
         ) == (REGISTERED, None, 0, None, None, None)
     for m in members:
-        assert (m.status, m.relay_zones, m.relay_validated) == (REGISTERED, 0, False)
+        assert (m.status, m.relay_zones, m.relay_validated, m.relay_token, m.relay_bound) == (
+            REGISTERED,
+            0,
+            False,
+            None,
+            False,
+        )
     assert db_teams[0].first_runner_id == chosen.id

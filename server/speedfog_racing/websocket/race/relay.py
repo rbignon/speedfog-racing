@@ -3,11 +3,13 @@ role, the baton operations, the loot of the team's bosses, and a member or a
 team going out.
 
 The operations (``request_handoff``, ``store_state``, ``request_take``,
-``confirm_taken``, ``set_ready``, ``member_connection_changed``, and the take
-timer) each take ``RaceRoom.relay_lock``, so they run one at a time per race.
-All but ``set_ready`` read the team through ``team_for_update``, whose row lock
-orders a flip and a progress write of the same team; ``set_ready`` reads only
-the member's team id, without a lock. ``member_out`` (a REST route or a
+``confirm_taken``, ``set_ready``, ``confirm_bound``,
+``member_connection_changed``, and the take timer) each take
+``RaceRoom.relay_lock``, so they run one at a time per race. All but
+``set_ready`` and ``confirm_bound`` read the team through ``team_for_update``,
+whose row lock orders a flip and a progress write of the same team;
+``set_ready`` reads only the member's team id, and ``confirm_bound`` writes the
+member's row alone, without a team lock. ``member_out`` (a REST route or a
 background loop taking a member or a team out) keeps the same discipline
 through ``relay_section``. See ``docs/RELAY.md`` ("Baton", "Lifecycle").
 """
@@ -167,7 +169,8 @@ def build_relay_info(
 ) -> RelayInfo:
     """``me``'s view of ``team``. A holder is a holder only while the baton is
     not free: after a take nobody acknowledged, the nominal holder waits like
-    the others and may take the baton back."""
+    the others and may take the baton back. ``token`` is ``me``'s own, once
+    their save is validated; no teammate's is ever listed."""
     cap = team_cap(total_layers, members)
     holder_online = team.holder_id is not None and team.holder_id in connected
     is_holder = holds_baton(team, me.id)
@@ -184,6 +187,8 @@ def build_relay_info(
         gates_locked=is_holder and me.relay_zones >= cap,
         members=[relay_member_wire(m, connected=connected, ready=ready) for m in members],
         flags=RelayFlags(**flags),
+        token=me.relay_token if me.relay_validated else None,
+        bound=me.relay_bound,
     )
 
 
@@ -963,6 +968,49 @@ async def set_ready(
             return
         await send_relay_updates(
             session_maker, row.race_id, row.relay_team_id, graph_json=graph_json
+        )
+
+
+async def confirm_bound(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    token: int,
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """A member's ``relay_bound``: their mod wrote their token into the save
+    their validation proved fresh. Recorded once, for the token drawn for
+    them: one UPDATE of the member alone, guarded on a validated save, that
+    token and no binding yet, so it needs no team row lock. The member is
+    then answered with a ``relay_update`` (its ``bound``); any other
+    ``relay_bound`` changes nothing and is answered by nothing."""
+    async with room.relay_lock:
+        async with session_maker() as db:
+            result = await db.execute(
+                update(Participant)
+                .where(
+                    Participant.id == participant_id,
+                    Participant.relay_validated.is_(True),
+                    Participant.relay_token == token,
+                    Participant.relay_bound.is_(False),
+                )
+                .values(relay_bound=True)
+                .returning(Participant.race_id, Participant.relay_team_id)
+                .execution_options(synchronize_session=False)
+            )
+            row = result.one_or_none()
+            await db.commit()
+        if row is None or row.relay_team_id is None:
+            logger.info("Ignored relay_bound: participant=%s", participant_id)
+            return
+        logger.info("Relay member bound to their save: participant=%s", participant_id)
+        await send_relay_updates(
+            session_maker,
+            row.race_id,
+            row.relay_team_id,
+            graph_json=graph_json,
+            to=(participant_id,),
         )
 
 

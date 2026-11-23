@@ -81,7 +81,9 @@ while empty). Names are at most 40 characters, `Team {n}` by default
 (`default_team_name`: the lowest n at or above the team count plus one that is free).
 
 `Participant.relay_team_id` is the runner's team, `relay_zones` the zones counted
-for them and `relay_validated` the fresh-save gate. The three keys between
+for them and `relay_validated` the fresh-save gate, `relay_token` the token that
+gate draws and `relay_bound` whether their mod wrote it into the save ("One
+character per member"). The three keys between
 participants and teams (`participants.relay_team_id`, `relay_teams.first_runner_id`,
 `relay_teams.holder_id`) are `ON DELETE SET NULL` and form a cycle, so the two
 keys towards participants are created after both tables (`use_alter`).
@@ -163,7 +165,7 @@ for an unknown user carries none, the invitee picks on the invite page.
 
 `prepare_relay_start` then fixes the teams: each started team becomes READY and its baton goes to `first_runner_id`. The members who are not READY keep their status (REGISTERED, or DISQUALIFIED after a reset): a REGISTERED member is still in the race, as a solo runner who has not connected yet, and may connect and join the run later (their first report validates their save; "Cap"); the no-show rule takes them out 30 minutes into the race otherwise ("Lifecycle"). A holder whose mod is not connected at the start is stamped offline from the race's `started_at` (`holder_offline_since`), the countdown's end: the 60 s wait starts with the race, and reads 60 through the countdown. After the start broadcasts, every connected member's mod gets a `relay_update` (`send_row_relay_updates`, team by team): its `holder_id`, its own `role`, `team_status` READY. The start marks every participant connection playing (a REGISTERED member's page stays behind the spoiler wall), then gives the ones already out their own status back (a runner disqualified before a reset).
 
-A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the members out return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
+A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0`, `relay_validated = False`, `relay_token = None` and `relay_bound = False` (the members out return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
 
 ## Baton
 
@@ -173,6 +175,7 @@ What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py
 - `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, kept between 0 and 60 (a stamp at the race start is in the future during the countdown). A holder absent with no stamp yet (its socket just gone, before its disconnect is recorded) reads the whole 60: the rule is 60 seconds of absence, always.
 - `gates_locked`: a holder whose `relay_zones` reached the team's cap.
 - `zone_name`: the node of `entry_flag_id` in the graph's `event_map`, else the start node.
+- `token`, `bound`: the receiving member's own save token (null until their save is validated) and whether their mod confirmed writing it ("One character per member").
 - Readiness: `RaceRoom.relay_ready` holds the members loaded at the Roundtable Hold with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected). It goes with the member's current socket: a disconnect, an eviction after a failed send or a replacement by a newer socket drops the member from it, and the mod sends `relay_ready` again after every `auth_ok`.
 
 ### Operations
@@ -340,13 +343,53 @@ any number of times. The kill's sends run under `relay_section`, once the kill's
 session is closed and before its `relay_update` ("Ordering"); the catch-up runs under
 the `relay_lock` that `member_connection_changed` holds.
 
+### One character per member
+
+Each member plays the run on a character and a save of their own, and the fresh-save
+gate checks that save once, at their first report after the start ("Progress and
+guards"). The IGT cannot hold a member to that save afterwards: a new character
+starts at an IGT of 0 and would pass the gate as well, a waiting runner's IGT is
+never judged once validated, and a take gives the receiver's game the team's IGT.
+Without more, a waiting runner could load another character, or create a new one
+and collect the team's boss loot again ("Boss loot": each mod gives what its own
+save has not received). The member is therefore bound to the save their validation
+proved fresh by a token:
+
+- **The draw.** The validation draws the member's token (`draw_relay_token` in
+  `services/relay.py`: 1 to `RELAY_TOKEN_MAX`, 2^24 - 1, from `secrets`; 0, a save
+  with none of the seed's token flags raised, never) into `Participant.relay_token`.
+  A waiting member's is drawn by the guarded UPDATE that validates them
+  (`_validate_member`, on `relay_validated` false), the first holder's by the team's
+  first report (`_on_first_init`) only when they have none: a member validated as a
+  waiting runner, who then received the baton of a team not playing yet, keeps the
+  token drawn then. One validation, one draw.
+- **To that member only.** `RelayInfo.token` is built for the receiving mod (like
+  `role`): the member's own token once their save is validated, null before, never
+  in `members[]`. The `relay_update` of the validation carries it.
+- **`relay_bound {token}`.** The mod writes the token into the save (the seed's
+  token flags, `token_flag_base` and `token_bits`, "Seeds") and confirms with this
+  message. `RelayModHandler` hands it to `confirm_bound` (`websocket/race/relay.py`),
+  under `relay_lock`: one UPDATE of the member alone sets `relay_bound` where the
+  member is validated, holds that token and is not bound yet, and that member's mod
+  then gets a `relay_update` (`RelayInfo.bound` true). Any other `relay_bound` (another
+  token, a member not validated, a member already bound) changes nothing and is
+  answered by nothing; a token outside 1 to 2^24 - 1 does not parse and is dropped.
+- **Reset.** A reset clears the token and the binding with the validation ("Start"):
+  the next start draws new tokens.
+
+The server draws, stores, sends, and records the confirmation; the check is the
+mod's. Once bound, the mod treats a save that does not carry the token as a wrong
+save. The server never sees the save: it cannot tell a save that carries the token
+from one that does not, and a member whose mod never confirms simply reads
+`bound: false`.
+
 ### Ordering
 
 `RaceRoom.relay_lock` serializes the operations above (and the take timer) per race, in
-memory. All but `relay_ready` read the team through `team_for_update`, which row-locks
-it (`SELECT ... FOR UPDATE`, a no-op on SQLite); `set_ready` reads only the member's
-team id, without a lock. The committing loads of the progress messages take the same
-row lock ("Progress and guards"), so a flip and a progress write of one team are
+memory. All but `relay_ready` and `relay_bound` read the team through `team_for_update`,
+which row-locks it (`SELECT ... FOR UPDATE`, a no-op on SQLite); `set_ready` reads only
+the member's team id, without a lock, and `confirm_bound` writes the member's row
+alone. The committing loads of the progress messages take the same row lock ("Progress and guards"), so a flip and a progress write of one team are
 ordered by the database. The lock order is always `relay_lock`, then the team row.
 The `relay_update` a progress message triggers (a teammate's first validation, the
 team's first report, a gate, a counted kill) is read and sent under `relay_section`
@@ -375,8 +418,9 @@ team rows explicitly first (`SELECT ... FOR UPDATE`), before it changes any memb
 Two such transactions therefore never wait on each other in opposite orders. A write to
 one table only needs no order: a flip, a checkpoint and the take timer write the team, a
 member's fresh-save validation writes the member (as an UPDATE guarded on the status it
-read, so it never brings back a member who went out meanwhile), and so does a waiting
-runner's own death counter (an UPDATE that leaves a member who is out alone).
+read, so it never brings back a member who went out meanwhile), and so do a waiting
+runner's own death counter (an UPDATE that leaves a member who is out alone) and a
+member's `relay_bound` (an UPDATE guarded on their token).
 
 ## Cap
 
@@ -450,8 +494,10 @@ carry every team's history. No progress load reads `character_state` (deferred).
   PLAYING and that holder is validated. Any other member's first report once the
   race runs (countdown over) sets `relay_validated` and moves them from READY to
   PLAYING when its IGT is at most 60 s; above, they get `error` `fresh_save_required`
-  and stay unvalidated. Once validated, a waiting runner's IGT is never judged. The
-  seed check is the mod's (it compares its pack with `RaceInfo.seed_id`).
+  and stay unvalidated. Once validated, a waiting runner's IGT is never judged. Each
+  validation draws the member's token, which binds them to that save (Baton, "One
+  character per member"). The seed check is the mod's (it compares its pack with
+  `RaceInfo.seed_id`).
 - **Wrong save.** `is_igt_plausible` judges the holder's IGT against the team's
   `igt_ms` and `last_igt_change_at`.
 - **Deaths.** Each save counts its own deaths. A member's `death_count` holds the
@@ -474,7 +520,8 @@ carry every team's history. No progress load reads `character_state` (deferred).
   a waiting runner none.
 - **`relay_update`** goes to the team's connected mods whenever `RelayInfo` changes
   here: a member passes the fresh-save gate (`validated`, `cap`, the holder's
-  `gates_locked`), the team's first report, each fog gate (`zone_name`, maybe a
+  `gates_locked`, that member's own `token`), the team's first report (the first
+  holder's `token`), each fog gate (`zone_name`, maybe a
   count), each counted kill (`members[].zones`, `gates_locked`), the finish
   (`team_status`); the baton operations send their own (Baton, "Operations").
 - **Finish.** The holder's final boss flag runs `finish_team`, `handle_finished` on

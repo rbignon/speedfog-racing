@@ -9,7 +9,7 @@ before acknowledging a baton just given to them (``_listened``). Every other
 member sends the same messages, since a mod does not know it waits: its
 ``event_flag`` and ``zone_query`` are acknowledged (the mod replays them until
 then) and recorded nowhere, and its ``status_update`` only runs its own
-fresh-save gate and keeps its own death counter. The five baton messages
+fresh-save gate and keeps its own death counter. The six relay messages
 (``relay_*``) go to the operations of ``websocket/race/relay.py``. See
 ``docs/RELAY.md`` ("Baton", "Cap", "Progress and guards").
 """
@@ -40,6 +40,7 @@ from speedfog_racing.services.layer_service import get_layer_for_node
 from speedfog_racing.services.relay import (
     RelayTeamRow,
     counts_zone_on_exit,
+    draw_relay_token,
     holds_baton,
     leaderboard_entries,
     relay_team_row,
@@ -59,6 +60,7 @@ from speedfog_racing.websocket.race.mod import (
 )
 from speedfog_racing.websocket.race.relay import (
     awaiting_take,
+    confirm_bound,
     confirm_taken,
     finish_team,
     member_connection_changed,
@@ -73,6 +75,7 @@ from speedfog_racing.websocket.race.relay import (
 from speedfog_racing.websocket.schemas import (
     DeathCountsMessage,
     ErrorCode,
+    RelayBoundMessage,
     RelayHandoffRequestMessage,
     RelayReadyMessage,
     RelayStateMessage,
@@ -109,6 +112,7 @@ class RelayModHandler(RaceModHandler):
         self._message_handlers["relay_take_request"] = self._handle_relay_take_request
         self._message_handlers["relay_state"] = self._handle_relay_state
         self._message_handlers["relay_taken"] = self._handle_relay_taken
+        self._message_handlers["relay_bound"] = self._handle_relay_bound
 
     # ------------------------------------------------------------------
     # The baton (operations in websocket/race/relay.py)
@@ -201,6 +205,21 @@ class RelayModHandler(RaceModHandler):
                 room,
                 self._participant_id,
                 parsed.handoff_id,
+                graph_json=self._cached_graph_json,
+            )
+        )
+
+    async def _handle_relay_bound(self, msg: dict[str, Any]) -> None:
+        parsed = self._parse(RelayBoundMessage, msg)
+        if parsed is None or self._participant_id is None:
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            confirm_bound(
+                self.session_maker,
+                room,
+                self._participant_id,
+                parsed.token,
                 graph_json=self._cached_graph_json,
             )
         )
@@ -374,10 +393,12 @@ class RelayModHandler(RaceModHandler):
         came before its ``ready``: it showed up), which gives them a share of
         the cap. Items are a union at a handoff, so a member on an old save
         would bring its inventory into the team. Its IGT is never judged
-        afterwards. ``member`` comes from the lock-free read, so the write is an
-        UPDATE guarded on the status read: it never brings back a member who
-        went out meanwhile. True when the member just passed (the caller
-        commits)."""
+        afterwards. The validation draws the member's save token
+        (``draw_relay_token``), which the update that follows tells their mod.
+        ``member`` comes from the lock-free read, so the write is an UPDATE
+        guarded on the status read: it never brings back a member who went out
+        meanwhile, and a token is drawn once, by the one write that validates.
+        True when the member just passed (the caller commits)."""
         if race.status != RaceStatus.RUNNING:
             await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
             return False
@@ -408,7 +429,7 @@ class RelayModHandler(RaceModHandler):
                 Participant.status == member.status,
                 Participant.relay_validated.is_(False),
             )
-            .values(relay_validated=True, status=status)
+            .values(relay_validated=True, status=status, relay_token=draw_relay_token())
             .execution_options(synchronize_session=False)
         )
         if result.rowcount == 0:  # type: ignore[attr-defined]
@@ -564,11 +585,16 @@ class RelayModHandler(RaceModHandler):
 
     def _on_first_init(self, entity: RelayTeam, start_node: str) -> None:  # type: ignore[override]
         # The team's fresh-save gate passed on its first holder's report: the
-        # team plays, and that report validates the holder's save too.
+        # team plays, and that report validates the holder's save too, which
+        # draws its token. A holder validated before, as a waiting runner who
+        # received the baton of a team not playing yet, keeps the token drawn
+        # then.
         super()._on_first_init(entity, start_node)  # type: ignore[arg-type]
         holder = self._holder(entity)
         if holder is not None:
             holder.relay_validated = True
+            if holder.relay_token is None:
+                holder.relay_token = draw_relay_token()
             if holder.status == ParticipantStatus.READY:
                 holder.status = ParticipantStatus.PLAYING
         self._stamp_runner(entity)

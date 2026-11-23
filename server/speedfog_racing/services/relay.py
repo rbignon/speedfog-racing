@@ -6,6 +6,7 @@ A relay seed is a seed whose ``graph.json`` has a top-level ``relay`` object
 
 import logging
 import math
+import secrets
 from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
@@ -46,6 +47,10 @@ RELAY_OFFLINE_WAIT_S = 60
 RELAY_RELEASE_TIMEOUT_S = 15.0
 # Seconds a new holder has to acknowledge a relay_take; then the baton is free.
 RELAY_TAKE_TIMEOUT_S = 30.0
+
+# The largest save token: the mod writes it as the seed's 24 token flags
+# (``token_bits``), and 0, a save with none of them raised, is never drawn.
+RELAY_TOKEN_MAX = 2**24 - 1
 
 
 class RelayRefusal(StrEnum):
@@ -129,6 +134,13 @@ def team_cap(total_layers: int, members: Sequence[Participant]) -> int:
     """The team's cap on the members who share it (``shares_cap``); never
     divides by zero."""
     return relay_cap(total_layers, max(1, sum(1 for m in members if shares_cap(m))))
+
+
+def draw_relay_token() -> int:
+    """A member's save token, drawn when their save passes the fresh-save gate:
+    1 to ``RELAY_TOKEN_MAX``, unpredictable (``secrets``), so a runner cannot
+    write it into another save before their mod is told it."""
+    return secrets.randbelow(RELAY_TOKEN_MAX) + 1
 
 
 def holds_baton(team: RelayTeam, participant_id: UUID | None) -> bool:
@@ -436,12 +448,16 @@ def prepare_relay_start(race: Race, *, connected: Collection[UUID], now: datetim
 
 
 def reset_relay_race(race: Race) -> None:
-    """Back to fresh teams after a reset: every team reset, member counters zeroed."""
+    """Back to fresh teams after a reset: every team reset, member counters
+    zeroed, and each member's save validation cleared with its token and
+    binding."""
     for team in race.relay_teams:
         reset_relay_team(team)
     for p in race.participants:
         p.relay_zones = 0
         p.relay_validated = False
+        p.relay_token = None
+        p.relay_bound = False
 
 
 @dataclass(frozen=True)

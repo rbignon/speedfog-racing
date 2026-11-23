@@ -179,6 +179,7 @@ def _member(name: str, *, zones: int = 0, status=ParticipantStatus.PLAYING) -> P
         user=User(twitch_username=name, twitch_display_name=name),
         relay_zones=zones,
         relay_validated=True,
+        relay_bound=False,
         status=status,
     )
 

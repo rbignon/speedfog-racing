@@ -624,6 +624,13 @@ class Participant(Base):
     relay_validated: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # The token drawn when that gate passes (1 to 2^24 - 1, null before), which
+    # the member's mod writes into the save the gate validated, and whether the
+    # mod confirmed it did (``relay_bound``). A reset clears both.
+    relay_token: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    relay_bound: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # Used by inactivity_monitor to scope the no-show timeout per-participant
     # (late-joiners must not be abandoned based on Race.started_at alone).
     created_at: Mapped[datetime] = mapped_column(

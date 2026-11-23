@@ -17,6 +17,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.models import RunMode, compute_late_join_deadlines
 from speedfog_racing.rewards.catalog import DEFAULT_PHANTOM_SKIN_ID, RANDOM_PHANTOM_SKIN_ID
 from speedfog_racing.rewards.service import RewardsService
+from speedfog_racing.services.relay import RELAY_TOKEN_MAX
 
 # Wire-protocol version, independent from release numbers. Bump rules:
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
@@ -236,6 +237,11 @@ class RelayInfo(BaseModel):
     gates_locked: bool
     members: list[RelayMember]
     flags: RelayFlags
+    # The receiving member's own save token, null until their save is
+    # validated (teammates never read it), and whether their mod confirmed it
+    # wrote that token into the save (relay_bound).
+    token: int | None = None
+    bound: bool = False
 
 
 class ParticipantInfo(BaseModel):
@@ -947,6 +953,15 @@ class RelayTakenMessage(BaseModel):
 
     type: Literal["relay_taken"] = "relay_taken"
     handoff_id: str
+
+
+class RelayBoundMessage(BaseModel):
+    """Mod to server: the member's save carries the token of its ``RelayInfo``."""
+
+    type: Literal["relay_bound"] = "relay_bound"
+    # A drawn token's range: a value outside it was never drawn, and the
+    # message is dropped as malformed rather than compared.
+    token: Annotated[int, Field(ge=1, le=RELAY_TOKEN_MAX)]
 
 
 class ZoneQueryAckMessage(BaseModel):
