@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from speedfog_racing.services.relay import loot_entry, team_loot
+from speedfog_racing.websocket.race.relay import relay_boss_name
 
 from . import test_integration as _integration
 from .relay_fixtures import (
@@ -149,6 +150,20 @@ def test_team_loot_follows_the_teams_dead_bosses():
     graph = relay_graph(progress_graph())
     assert [e.flag for e in team_loot(graph, history)] == [BOSS_FLAG]
     assert team_loot(graph, history[:1]) == []
+
+
+@pytest.mark.parametrize(
+    ("node", "name"),
+    [
+        ({"boss_name": "Margit", "display_name": "Stormveil Castle"}, "Margit"),
+        ({"display_name": "Stormveil Castle"}, "Stormveil Castle"),
+        ({"boss_name": "", "display_name": "Stormveil Castle"}, "Stormveil Castle"),
+        ({}, "stormveil_48fd"),
+        ({"boss_name": None, "display_name": ""}, "stormveil_48fd"),
+    ],
+)
+def test_the_announce_names_the_boss_fought_else_the_zone_else_the_node(node, name):
+    assert relay_boss_name(node, "stormveil_48fd") == name
 
 
 # --- A kill ---

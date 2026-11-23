@@ -145,6 +145,14 @@ def relay_zone_name(team: RelayTeam, graph_json: Mapping[str, Any] | None) -> st
     return name if isinstance(name, str) and name else node_id
 
 
+def relay_boss_name(node: Mapping[str, Any], node_id: str) -> str:
+    """The boss a kill's announce names, for the graph node ``node_id``: its
+    ``boss_name`` (the boss fought, which a swapped boss changes), else the
+    node's ``display_name`` (the zone), else its id."""
+    names = (node.get("boss_name"), node.get("display_name"))
+    return next((n for n in names if isinstance(n, str) and n), node_id)
+
+
 def build_relay_info(
     team: RelayTeam,
     members: Sequence[Participant],
@@ -248,9 +256,8 @@ async def send_kill_loot(
     members still in the race (``members``: the team's, their users loaded).
     The killer's own game paid the boss: ``paid``, no announce. Each teammate
     gets the announce of the kill: the killer's name and the boss's
-    (``boss_name``, else the node's ``display_name``, else its id). Nothing
-    when the node's defeat flag has no usable loot entry (``loot_entry`` logs
-    it)."""
+    (``relay_boss_name``). Nothing when the node's defeat flag has no usable
+    loot entry (``loot_entry`` logs it)."""
     nodes = graph.get("nodes")
     node = nodes.get(node_id) if isinstance(nodes, dict) else None
     flag = node.get("defeat_flag") if isinstance(node, dict) else None
@@ -260,10 +267,9 @@ async def send_kill_loot(
     entry = loot_entry(graph, flag)
     if entry is None:
         return
-    names = (node.get("boss_name"), node.get("display_name"))
     announce = RelayLootAnnounce(
         runner=killer.user.twitch_display_name or killer.user.twitch_username,
-        boss=next((n for n in names if isinstance(n, str) and n), node_id),
+        boss=relay_boss_name(node, node_id),
     )
     to_killer = RelayLootMessage(entries=[entry], paid=True, announce=None).model_dump_json()
     to_teammate = RelayLootMessage(entries=[entry], paid=False, announce=announce).model_dump_json()

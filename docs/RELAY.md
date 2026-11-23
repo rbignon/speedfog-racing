@@ -320,7 +320,8 @@ They go out in `relay_loot` (`entries`, `paid`, `announce`; wire shapes in
   reported the kill gets `paid: true` and `announce: null`: their own game paid the
   boss, so their mod only marks it received. Each teammate gets `paid: false` and
   `announce` `{runner, boss}`, for a banner: the killer's name (as `members[].name`)
-  and the boss's (the node's `boss_name`, else its `display_name`, else its id). A
+  and the boss's (`relay_boss_name`: the node's `boss_name`, the boss fought, else
+  its `display_name`, the zone, else its id). A
   re-report or a replay of the flag is no new kill and sends nothing.
 - **After a connection** (`send_team_loot`, from `member_connection_changed`): a
   member still in the race whose mod connects gets, after the `relay_update` of the
