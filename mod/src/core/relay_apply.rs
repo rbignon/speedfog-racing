@@ -24,14 +24,16 @@ pub const APPLY_DEADLINE: Duration = Duration::from_secs(15);
 /// Most writes (gives and flag raises) of an apply in one frame. At the
 /// ceiling, a take of a few hundred writes is done in well under a second at
 /// 60 fps, and the most a state can carry (4000 items and 1000 grace flags)
-/// in about 5 s at 60 fps and 11 s at 30, inside `APPLY_DEADLINE`. Like
-/// `APPLY_FRAME_BUDGET`, a provisional value until measured in game.
+/// in about 5 s at 60 fps and 11 s at 30, inside `APPLY_DEADLINE`. Measured
+/// in game, a full batch of gives takes well under `APPLY_FRAME_BUDGET`: this
+/// ceiling is what paces an apply.
 pub const APPLY_WRITES_PER_FRAME: usize = 16;
 /// Wall time a frame's batch may spend writing: once it is spent the batch
 /// stops, after at least one write, so a slow give holds no frame long and
-/// an apply still moves on every frame. A give costs far more than a flag
-/// raise; gives slow enough to hit this on each write leave a large state
-/// cut by `APPLY_DEADLINE`. Provisional until measured in game.
+/// an apply still moves on every frame. Gives slow enough to hit this on
+/// each write would leave a large state cut by `APPLY_DEADLINE`. Measured
+/// in game, it is a guard that a normal apply does not reach (docs/RELAY.md
+/// has the figures).
 pub const APPLY_FRAME_BUDGET: Duration = Duration::from_micros(1500);
 
 /// Name of the environment variable that turns the test-only slow apply on.
@@ -161,9 +163,9 @@ impl ItemRows {
 }
 
 /// One write of an apply, in the order they are made: the grace flags, then
-/// the boss defeat flags, then the items, then the armor. Flags are cheap and
-/// go first, so an apply cut short (a load, the deadline) has written them
-/// before the slow gives: a grace or an item an apply cut for good leaves
+/// the boss defeat flags, then the items, then the armor. The flags go
+/// first, so an apply cut short (a load, the deadline) has written them
+/// before the gives: a grace or an item an apply cut for good leaves
 /// unwritten is lost for the team, since the next handoff captures this
 /// runner's world. The armor is kept last so a give this mod never made
 /// before cannot hold up the rest.
