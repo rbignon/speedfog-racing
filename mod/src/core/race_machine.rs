@@ -308,7 +308,8 @@ pub struct FrameNeeds {
     pub poll_flags: bool,
     /// Read the game's debug-flag bytes (cheat detection, 10 Hz while racing).
     pub debug_flags: bool,
-    /// Read the player's HP (only while a relay runner's warp waits on it).
+    /// Read the player's HP, on a loaded frame (only while a relay
+    /// runner's warp, take or loot waits on it: `relay_wants_hp`).
     pub hp: bool,
     /// Read the relay token flags, `(base, bits)`, if the player is loaded
     /// (only while a read of the save's token is due).
@@ -5086,7 +5087,11 @@ impl RaceMachine {
     /// while a take waits for the frame that writes it or the one that
     /// acknowledges it (not while the shell applies it), or while an entry
     /// of the team's loot may be handed out (`relay_loot_may_go`; a frame
-    /// that reads the token may open its gate).
+    /// that reads the token may open its gate) on a frame that follows a
+    /// loaded one: the frames of a load after its first, and its exit frame,
+    /// give nothing (the first settled frame always follows a loaded one).
+    /// Called before the frame's reads: `frame_snapshot` is the previous
+    /// frame's.
     fn relay_wants_hp(&self, now: Instant) -> bool {
         self.relay_warp_may_start(now)
             || self
@@ -5094,6 +5099,7 @@ impl RaceMachine {
                 .as_ref()
                 .is_some_and(|take| take.phase != TakePhase::Applying)
             || (!self.relay_loot.is_empty()
+                && self.frame_snapshot.position_readable
                 && self.relay_loot_may_go(now, self.relay_token_read(now).is_some()))
     }
 
@@ -20715,5 +20721,34 @@ mod tests {
             assert_eq!(loot_asked(&fx), [(GODRICK, true)]);
             assert!(m.relay_loot.is_empty());
         });
+    }
+
+    #[test]
+    fn no_hp_is_asked_for_loot_on_a_frame_that_cannot_give() {
+        let t0 = Instant::now();
+        let mut m = loot_machine(t0);
+        // An entry received during a load.
+        go(&mut m, t0, 100, None);
+        m.handle_message(loot_msg(&[GODRICK], false, None), t0 + ms(150));
+        let mut asked = Vec::new();
+        for at in (200..=500).step_by(100) {
+            if m.pre_tick(t0 + ms(at), true, true).hp {
+                asked.push(at);
+            }
+            go(&mut m, t0, at, None);
+        }
+        // Its exit, the frames before the settle, then the settled frame,
+        // which gives it.
+        let exit = 516;
+        let mut given = Vec::new();
+        for at in (exit..=exit + settle_ms() + 200).step_by(100) {
+            if m.pre_tick(t0 + ms(at), true, true).hp {
+                asked.push(at);
+            }
+            let fx = loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN));
+            given.extend(loot_asked(&fx).into_iter().map(|_| at));
+        }
+        assert_eq!(given, [exit + settle_ms()]);
+        assert_eq!(asked, [exit + settle_ms()], "HP asked on {asked:?}");
     }
 }
