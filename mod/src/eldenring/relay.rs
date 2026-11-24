@@ -248,30 +248,20 @@ pub fn write_token(reader: &EventFlagReader, flags: &[(u32, bool)]) -> usize {
 }
 
 /// Give one entry of the team's boss loot, on the tracker's frame thread, on
-/// the frame the machine handed it out: read the flags
-/// `core::relay_loot::decide` needs (the received flag, unless `paid` the
-/// boss's defeat flag, and the pickup flags only when that one is up), then
-/// carry out what it decides (`core::relay_loot::carry_out`): the items given
-/// one unit at a time through the item spawner, the rune effect through the
-/// SpEffect apply function, the flags raised through the event flag reader.
-/// A flag that cannot be raised is warned, with its id. `Unreadable` when a
-/// flag it needs does not read.
+/// the frame the machine handed it out: read in the save the flags its
+/// decision needs (`core::relay_loot::decide_reading`, which says which and
+/// in what order), then carry out what it decides
+/// (`core::relay_loot::carry_out`): the items given one unit at a time
+/// through the item spawner, the rune effect through the SpEffect apply
+/// function, the flags raised through the event flag reader. A flag that
+/// cannot be raised is warned, with its id; a give whose received flag it
+/// is says so (`LootOutcome::Given { marked: false, .. }`). `Unreadable`
+/// when nothing was done: a flag the decision needs did not read, the game
+/// refused the first give, or a mark's received flag could not be raised.
 pub fn apply_loot(reader: &EventFlagReader, entry: &RelayLootEntry, paid: bool) -> LootOutcome {
     profile_span!("relay.apply_loot");
-    let received = reader.is_flag_set(entry.received_flag);
-    let defeated = (received == Some(false) && !paid)
-        .then(|| reader.is_flag_set(entry.flag))
-        .flatten();
-    let pickups: Vec<Option<bool>> = if defeated == Some(true) {
-        entry
-            .pickup_flags
-            .iter()
-            .map(|&flag| reader.is_flag_set(flag))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let Some(action) = relay_loot::decide(received, paid, defeated, &pickups) else {
+    let Some(action) = relay_loot::decide_reading(entry, paid, |flag| reader.is_flag_set(flag))
+    else {
         return LootOutcome::Unreadable;
     };
     relay_loot::carry_out(

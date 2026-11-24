@@ -405,8 +405,9 @@ pub enum Effect {
         handoff_id: String,
     },
     /// Give one entry of the relay team's boss loot on this frame
-    /// (`core::relay_loot`): read its flags in the save, carry out what
-    /// `relay_loot::decide` makes of them. Contract with the shell: it
+    /// (`core::relay_loot`): read the flags its decision needs in the save
+    /// (`relay_loot::decide_reading`), carry out what it decides (`paid`:
+    /// a mark at most). Contract with the shell: it
     /// answers on the same pass, on the tracker's frame thread, with
     /// `RaceMachine::relay_loot_result`, handing the entry and `paid` back
     /// with the outcome, `Unreadable` when it could not even try.
@@ -5903,10 +5904,12 @@ impl RaceMachine {
     /// The shell's answer to `Effect::ApplyRelayLoot`, on the pass that
     /// executed it, with the entry and its `paid` back and what became of
     /// it, which is logged. An entry nothing was done to (`Unreadable`: a
-    /// flag that did not read, a give the game could not take) waits
-    /// `relay_loot::LOOT_RETRY` in the queue, behind the others, and is
-    /// dropped once its tries are spent: the list of the next `auth_ok`
-    /// brings it back.
+    /// flag that did not read, a mark the game could not take, a give the
+    /// game could not take) waits `relay_loot::LOOT_RETRY` in the queue,
+    /// behind the others, and is dropped once its tries are spent: the list
+    /// of the next `auth_ok` brings it back. An entry given whose received
+    /// flag was not raised is put back by the same rule to be marked only:
+    /// nothing of it is given again by this session.
     pub fn relay_loot_result(
         &mut self,
         entry: RelayLootEntry,
@@ -5915,11 +5918,18 @@ impl RaceMachine {
         now: Instant,
     ) {
         let flag = entry.flag;
+        let owed = self.relay_loot.owes_mark(flag);
         match outcome {
             LootOutcome::AlreadyReceived => debug!(flag, "[RELAY] Loot already received"),
             LootOutcome::Marked => info!(
                 flag,
-                why = if paid { "paid" } else { "awarded" },
+                why = if owed {
+                    "given"
+                } else if paid {
+                    "paid"
+                } else {
+                    "awarded"
+                },
                 "[RELAY] Loot marked"
             ),
             LootOutcome::Given {
@@ -5927,27 +5937,37 @@ impl RaceMachine {
                 failed,
                 cut,
                 rune_refused,
+                marked,
             } => {
                 let runes = entry.runes;
-                if failed > 0 || rune_refused || cut > 0 {
+                if failed > 0 || rune_refused || cut > 0 || !marked {
                     warn!(
                         flag,
-                        units, failed, runes, rune_refused, cut, "[RELAY] Loot given"
+                        units, failed, runes, rune_refused, cut, marked, "[RELAY] Loot given"
                     );
                 } else {
                     info!(
                         flag,
-                        units, failed, runes, rune_refused, cut, "[RELAY] Loot given"
+                        units, failed, runes, rune_refused, cut, marked, "[RELAY] Loot given"
+                    );
+                }
+                if !marked && !self.relay_loot.owe_mark(entry, now) {
+                    warn!(
+                        flag,
+                        tries = relay_loot::LOOT_TRIES_MAX,
+                        mark_owed = true,
+                        "[RELAY] Loot dropped"
                     );
                 }
             }
             LootOutcome::Unreadable => {
                 if self.relay_loot.retry(entry, paid, now) {
-                    debug!(flag, "[RELAY] Loot not readable, later");
+                    debug!(flag, mark_owed = owed, "[RELAY] Loot not readable, later");
                 } else {
                     warn!(
                         flag,
                         tries = relay_loot::LOOT_TRIES_MAX,
+                        mark_owed = owed,
                         "[RELAY] Loot dropped"
                     );
                 }
@@ -10700,6 +10720,18 @@ mod tests {
         let mut plain = RaceMachine::new(1, String::new(), false, now);
         let fx = plain.handle_message(relay_auth("running", None), now);
         assert!(!fx.contains(&Effect::PrewarmSpEffectApply), "{fx:?}");
+
+        // A relay race with items: the items' prewarm, then the relay's (the
+        // shell runs the second as a no-op).
+        let mut auth = relay_auth("running", Some(relay_info("waiting")));
+        if let MachineMessage::AuthOk { race, .. } = &mut auth {
+            race.race_items = true;
+        }
+        let mut both = RaceMachine::new(1, String::new(), false, now);
+        let fx = both.handle_message(auth, now);
+        let items = fx.iter().position(|e| *e == Effect::PrewarmRaceItems);
+        let speffect = fx.iter().position(|e| *e == Effect::PrewarmSpEffectApply);
+        assert!(items.zip(speffect).is_some_and(|(i, s)| i < s), "{fx:?}");
     }
 
     #[test]
@@ -19973,7 +20005,13 @@ mod tests {
     #[test]
     fn an_exit_held_on_another_save_is_dropped_when_the_relay_ends() {
         // Every lift of the wrong token that is no read of the runner's.
-        for end in ["team finished", "member out", "no relay", "token gone"] {
+        for end in [
+            "team finished",
+            "member out",
+            "no relay",
+            "token gone",
+            "race finished",
+        ] {
             let t0 = Instant::now();
             let mut m = token_holder(t0);
             // A gate's flag deferred, then another character: the exit held.
@@ -19990,22 +20028,42 @@ mod tests {
                 "token gone" => info.token = None,
                 _ => {}
             }
-            if end == "no relay" {
-                m.handle_message(relay_auth("running", None), t0 + ms(1_250));
-            } else {
-                update(&mut m, info, t0, 1_250);
+            match end {
+                "no relay" => {
+                    m.handle_message(relay_auth("running", None), t0 + ms(1_250));
+                }
+                "race finished" => {
+                    m.handle_message(
+                        MachineMessage::RaceStatusChange {
+                            status: RaceStatus::Finished,
+                            current_igt: None,
+                        },
+                        t0 + ms(1_250),
+                    );
+                }
+                _ => update(&mut m, info, t0, 1_250),
             }
             for at in (exit + 100..=exit + settle_ms() + 3_000).step_by(100) {
                 fx.extend(zone_frame(&mut m, t0, at, Some(TOKEN + 1), &mut gate));
             }
             assert!(!m.relay_wrong_token, "{end}");
-            // Nothing of that exit is sent, nor left for the next exit.
+            // Nothing of that exit is sent at the lift, nor left for the next
+            // exit: its deferred flag is parked for the next reconnection
+            // while the race runs and the runner is not finished, else
+            // cleared.
             assert!(m.relay_exit_held.is_none(), "{end}");
-            assert!(!m.flag_buffer.has_deferred(), "{end}");
             assert!(
                 flags_sent(&fx).is_empty() && zone_queries(&fx).is_empty(),
                 "{end}: {fx:?}"
             );
+            let parked: &[(u32, u32)] = if end == "race finished" {
+                &[]
+            } else {
+                &[(ZONE_FLAG, 6_100)]
+            };
+            let buffered: Vec<_> = m.flag_buffer.iter().copied().collect();
+            assert!(!m.flag_buffer.has_deferred(), "{end}");
+            assert_eq!(buffered, parked, "{end}");
         }
     }
 
@@ -20050,19 +20108,26 @@ mod tests {
         failed: 0,
         cut: 0,
         rune_refused: false,
+        marked: true,
     };
 
-    /// The entry of boss `flag`: an item, a rune effect, a pickup flag.
+    /// The entry of boss `flag` (one of the three above), numbered as the
+    /// seed numbers them: its own received flag and rune effect, an item, a
+    /// pickup flag.
     fn loot_entry(flag: u32) -> RelayLootEntry {
+        let index = [GODRICK, MARGIT, RENNALA]
+            .iter()
+            .position(|&boss| boss == flag)
+            .expect("a boss of the team") as u32;
         RelayLootEntry {
             flag,
-            received_flag: 1_050_297_000 + flag % 100,
+            received_flag: 1_050_297_000 + index,
             pickup_flags: vec![510_060],
             items: vec![crate::core::protocol::RelayLootItem {
                 id: 0x4000_0000 | (flag % 1000),
                 qty: 1,
             }],
-            rune_speffect: Some(755_891_000 + flag % 100),
+            rune_speffect: Some(755_891_000 + index),
             runes: 13_000,
         }
     }
@@ -20366,5 +20431,47 @@ mod tests {
         );
         let fx = loot_frame(&mut m, t0, 100, Some(IN_ZONE), Some(TOKEN));
         assert_eq!(loot_asked(&fx), [(MARGIT, false)]);
+    }
+
+    #[test]
+    fn a_give_whose_received_flag_is_not_raised_is_marked_later() {
+        let logs = LogCapture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::INFO)
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            let t0 = Instant::now();
+            let mut m = loot_machine(t0);
+            m.handle_message(loot_msg(&[GODRICK], false, None), t0 + ms(50));
+            let fx = go_token(&mut m, t0, 100, roundtable(), Some(TOKEN));
+            assert_eq!(loot_asked(&fx), [(GODRICK, false)]);
+            let unmarked = LootOutcome::Given {
+                units: 1,
+                failed: 0,
+                cut: 0,
+                rune_refused: false,
+                marked: false,
+            };
+            answer_loot(&mut m, &fx, unmarked, t0 + ms(100));
+            // The list of a reconnection sends it again: still owed a mark.
+            m.handle_message(loot_msg(&[GODRICK], false, None), t0 + ms(150));
+            // Tried again after the retry delay, as a mark only (paid: the
+            // shell then gives nothing), and marked.
+            let mut asked = Vec::new();
+            for at in (200..=1_500).step_by(100) {
+                let fx = go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
+                answer_loot(&mut m, &fx, LootOutcome::Marked, t0 + ms(at));
+                asked.extend(loot_asked(&fx).into_iter().map(|a| (at, a)));
+            }
+            let again = 100 + crate::core::relay_loot::LOOT_RETRY.as_millis() as u64;
+            assert_eq!(asked, [(again, (GODRICK, true))]);
+            assert!(m.relay_loot.is_empty());
+            // The log says why: a mark owed after a give, not a paid kill.
+            let contents = logs.contents();
+            assert!(contents.contains(r#"why="given""#), "{contents}");
+            assert!(!contents.contains(r#"why="paid""#), "{contents}");
+        });
     }
 }
