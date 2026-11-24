@@ -351,7 +351,7 @@ mod tests {
                 {"participant_id": "p4", "name": "wospince", "zones": 5, "status": "playing", "online": true, "ready": true, "validated": true},
                 {"participant_id": "p5", "name": "Linlin_Tv", "zones": 0, "status": "playing", "online": false, "ready": false, "validated": true}
             ],
-            "flags": {"lock_flag": 1050290500, "chapel_warp_flag": 1050290501, "warp_flag_base": 1050290510, "zone_flag_base": 1050294000}
+            "flags": {"lock_flag": 1050290500, "chapel_warp_flag": 1050290501, "warp_flag_base": 1050290510, "zone_flag_base": 1050294000, "travel_lock_flag": 1050290503, "roundtable_warp_flag": 1050290504, "token_flag_base": 1050297900, "token_bits": 24}
         }))
         .unwrap()
     }

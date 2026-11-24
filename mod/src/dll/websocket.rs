@@ -1027,6 +1027,22 @@ fn message_loop(
                                 warn!("[WS] Incoming channel full/closed: relay_take dropped");
                             }
                         }
+                        ServerMessage::RelayLoot {
+                            entries,
+                            paid,
+                            announce,
+                        } => {
+                            if incoming_tx
+                                .send(MachineMessage::RelayLoot {
+                                    entries,
+                                    paid,
+                                    announce,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: relay_loot dropped");
+                            }
+                        }
                         ServerMessage::RelayRefused { code, message } => {
                             if incoming_tx
                                 .send(MachineMessage::RelayRefused { code, message })

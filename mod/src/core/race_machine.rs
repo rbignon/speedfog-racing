@@ -24,7 +24,8 @@ use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
     CameraVariant, CharacterState, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload,
     ItemReminder, ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods,
-    RaceStatus, RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
+    RaceStatus, RelayInfo, RelayLootAnnounce, RelayLootEntry, RelayMember, RelayRole, SeedInfo,
+    TalismanFlag,
 };
 use crate::core::relay::{
     self, ApplyInFlight, CaptureInFlight, FlagWarp, PassedBanner, PendingRelease, PendingTake,
@@ -188,6 +189,12 @@ pub enum MachineMessage {
     RelayRefused {
         code: String,
         message: String,
+    },
+    /// The loot of the team's bosses (same fields as the wire message).
+    RelayLoot {
+        entries: Vec<RelayLootEntry>,
+        paid: bool,
+        announce: Option<RelayLootAnnounce>,
     },
 }
 
@@ -3014,6 +3021,9 @@ impl RaceMachine {
                 warn!(code = %code, message = %message, "[RELAY] Request refused");
                 self.relay_request = None;
                 self.set_status(message, now);
+            }
+            MachineMessage::RelayLoot { entries, paid, .. } => {
+                debug!(entries = entries.len(), paid, "[RELAY] Loot received");
             }
             MachineMessage::ItemNotice { banner } => {
                 self.last_received_debug = Some("item_notice".to_string());
@@ -13159,7 +13169,7 @@ mod tests {
               "role":"{role}","gates_locked":false,
               "members":[{{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true,"ready":true,"validated":true}},
                          {{"participant_id":"p2","name":"Kahleeya","zones":3,"status":"playing","online":true,"ready":false,"validated":true}}],
-              "flags":{{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000}}}}"#
+              "flags":{{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000,"travel_lock_flag":1050290503,"roundtable_warp_flag":1050290504,"token_flag_base":1050297900,"token_bits":24}}}}"#
         ))
         .unwrap()
     }

@@ -99,6 +99,8 @@ pub enum ClientMessage {
     },
     /// Relay (1.19): the new holder applied the take and raised its warp flag.
     RelayTaken { handoff_id: String },
+    /// Relay (1.19): the member's save was validated with this token.
+    RelayBound { token: u32 },
     /// Heartbeat response
     Pong,
 }
@@ -619,6 +621,10 @@ pub struct RelayFlags {
     pub chapel_warp_flag: u32,
     pub warp_flag_base: u32,
     pub zone_flag_base: u32,
+    pub travel_lock_flag: u32,
+    pub roundtable_warp_flag: u32,
+    pub token_flag_base: u32,
+    pub token_bits: u32,
 }
 
 /// What the mod is told about its relay team and its own role. `team_status`
@@ -639,6 +645,37 @@ pub struct RelayInfo {
     pub gates_locked: bool,
     pub members: Vec<RelayMember>,
     pub flags: RelayFlags,
+    /// The member's save token, null until their save is validated.
+    #[serde(default)]
+    pub token: Option<u32>,
+    /// Whether the member is bound to the character of their token.
+    #[serde(default)]
+    pub bound: bool,
+}
+
+/// One item of a relay loot entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayLootItem {
+    pub id: u32,
+    pub qty: u32,
+}
+
+/// The loot of one boss the team killed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayLootEntry {
+    pub flag: u32,
+    pub received_flag: u32,
+    pub pickup_flags: Vec<u32>,
+    pub items: Vec<RelayLootItem>,
+    pub rune_speffect: Option<u32>,
+    pub runes: u32,
+}
+
+/// Who defeated which boss, for the banner of a live loot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayLootAnnounce {
+    pub runner: String,
+    pub boss: String,
 }
 
 /// Exit info in zone_update message
@@ -792,6 +829,13 @@ pub enum ServerMessage {
     /// Relay (1.19): a request was refused. The mod shows `message` and logs
     /// `code`; it branches on no code.
     RelayRefused { code: String, message: String },
+    /// Relay (1.19): the loot of the team's bosses. `announce` is null for a
+    /// catch-up list, `paid` tells whether the member was already paid.
+    RelayLoot {
+        entries: Vec<RelayLootEntry>,
+        paid: bool,
+        announce: Option<RelayLootAnnounce>,
+    },
 }
 
 // =============================================================================
@@ -2538,7 +2582,7 @@ mod tests {
       "role":"waiting","gates_locked":false,
       "members":[{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true,"ready":true,"validated":true},
                  {"participant_id":"p2","name":"Kahleeya","zones":3,"status":"playing","online":true,"ready":false,"validated":true}],
-      "flags":{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000}}"#;
+      "flags":{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000,"travel_lock_flag":1050290503,"roundtable_warp_flag":1050290504,"token_flag_base":1050297900,"token_bits":24}}"#;
     const RELAY_STATE: &str = r#"{"grace_flags":[71000,76101]}"#;
     const AUTH_OK_BASE: &str = r#""type":"auth_ok","participant_id":"abc-123",
         "race":{"id":"123","name":"Test Race","status":"setup"},
@@ -2565,6 +2609,59 @@ mod tests {
         assert_eq!(relay.zone_name.as_deref(), Some("Stormveil Castle"));
         assert!(relay.members[0].ready && !relay.members[1].ready);
         assert!(relay.baton_free_in_s.is_none());
+        // A message of the earlier shape carries no token: read as unbound.
+        assert_eq!((relay.token, relay.bound), (None, false));
+    }
+
+    #[test]
+    fn relay_loot_parses_with_and_without_an_announce() {
+        let live = r#"{"type":"relay_loot","paid":false,
+            "announce":{"runner":"Kahleeya","boss":"Godrick the Grafted"},
+            "entries":[{"flag":10000800,"received_flag":1050297000,"pickup_flags":[510060],
+                        "items":[{"id":536874924,"qty":1}],"rune_speffect":755891000,"runes":13000}]}"#;
+        let ServerMessage::RelayLoot {
+            entries,
+            paid,
+            announce,
+        } = serde_json::from_str(live).unwrap()
+        else {
+            panic!()
+        };
+        assert!(!paid);
+        assert_eq!(announce.unwrap().boss, "Godrick the Grafted");
+        assert_eq!(
+            entries[0].items[0],
+            RelayLootItem {
+                id: 0x2000_0000 | 4012,
+                qty: 1
+            }
+        );
+        let list = r#"{"type":"relay_loot","paid":true,"announce":null,
+            "entries":[{"flag":1,"received_flag":2,"pickup_flags":[],"items":[],"rune_speffect":null,"runes":0}]}"#;
+        assert!(matches!(
+            serde_json::from_str(list).unwrap(),
+            ServerMessage::RelayLoot {
+                paid: true,
+                announce: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn relay_bound_serializes_with_its_token() {
+        assert_eq!(
+            serde_json::to_string(&ClientMessage::RelayBound { token: 4242 }).unwrap(),
+            r#"{"type":"relay_bound","token":4242}"#
+        );
+    }
+
+    #[test]
+    fn a_relay_info_without_the_new_flags_is_refused() {
+        // The 4.15 flags: a seed of the old shape must not be read as a relay.
+        let old = RELAY_INFO.replace(r#","travel_lock_flag":1050290503"#, "");
+        assert_ne!(old, RELAY_INFO);
+        assert!(serde_json::from_str::<RelayInfo>(&old).is_err());
     }
 
     #[test]
