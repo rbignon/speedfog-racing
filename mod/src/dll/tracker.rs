@@ -405,6 +405,9 @@ pub struct RaceTracker {
     // Race item game access readied off the render thread (once per
     // process, at the first auth_ok of a race with items).
     race_items_prewarmed: bool,
+    // The SpEffect apply function readied off the render thread (once per
+    // process, by either prewarm).
+    speffect_apply_prewarmed: bool,
 
     // The last equip load rate written and the max load it was computed
     // from: a max read equal to their product means the effect still runs.
@@ -594,6 +597,7 @@ impl RaceTracker {
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
             phantom_skin_name: None,
             race_items_prewarmed: false,
+            speffect_apply_prewarmed: false,
             equip_load_last: None,
             memory_written: MemoryState::default(),
             memory_retry_at: Instant::now(),
@@ -1094,6 +1098,7 @@ impl RaceTracker {
                     self.ws_client.send_item_received(grant_id);
                 }
                 Effect::PrewarmRaceItems => self.prewarm_race_items(),
+                Effect::PrewarmSpEffectApply => self.prewarm_speffect_apply(),
                 Effect::SetGoodsIcon { goods_id, icon_id } => {
                     if race_items::set_goods_icon(goods_id, icon_id) {
                         info!(goods_id, icon_id, "[ITEMS] Goods icon set");
@@ -1197,10 +1202,25 @@ impl RaceTracker {
             return;
         }
         self.race_items_prewarmed = true;
+        self.speffect_apply_prewarmed = true;
         info!("[ITEMS] Prewarming the SpEffect apply function, the equip function and the params");
         std::thread::spawn(sp_effect_apply::prewarm);
         std::thread::spawn(equip_change::prewarm);
         std::thread::spawn(race_items::prewarm_params);
+    }
+
+    /// Resolve the SpEffect apply function on a background thread (its
+    /// pattern scan walks the whole game image), so the first SpEffect
+    /// applied does not stall a frame. Once per process, and not after the
+    /// race items' prewarm, which resolves it too; a resolve asked twice
+    /// resolves once (`sp_effect_apply::prewarm` is idempotent).
+    fn prewarm_speffect_apply(&mut self) {
+        if self.speffect_apply_prewarmed {
+            return;
+        }
+        self.speffect_apply_prewarmed = true;
+        info!("[RELAY] Prewarming the SpEffect apply function");
+        std::thread::spawn(sp_effect_apply::prewarm);
     }
 
     /// Take one of the talismans the player wears (the Talisman Thief): the

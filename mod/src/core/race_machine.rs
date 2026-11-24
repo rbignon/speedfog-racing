@@ -490,6 +490,12 @@ pub enum Effect {
     /// does not stall a frame. Emitted at every auth_ok of a race with
     /// items; the shell runs it once per process.
     PrewarmRaceItems,
+    /// Ready the SpEffect apply function (its pattern scan) on a background
+    /// thread, so the first SpEffect applied does not stall a frame. Emitted
+    /// at every auth_ok that carries a relay (a relay team's loot applies its
+    /// runes as a SpEffect); the shell runs it once per process, and not
+    /// after `PrewarmRaceItems`, which readies it too.
+    PrewarmSpEffectApply,
     /// Write `icon_id` into the `EquipParamGoods` row of `goods_id`, so the
     /// goods shows the held item's icon in game. Emitted before a grant's
     /// spawn and, for the held item, before each inventory report (a game
@@ -2446,6 +2452,11 @@ impl RaceMachine {
                 // render thread now, not at the first effect.
                 if race.race_items {
                     effects.push(Effect::PrewarmRaceItems);
+                }
+                // A relay's loot applies its runes as a SpEffect: only that
+                // function, readied as well by the race items' prewarm.
+                if relay.is_some() {
+                    effects.push(Effect::PrewarmSpEffectApply);
                 }
                 self.last_received_debug = Some(format!(
                     "auth_ok(race={}, {} players)",
@@ -10675,6 +10686,20 @@ mod tests {
         let mut off = RaceMachine::new(1, String::new(), false, now);
         let fx = off.handle_message(auth_ok_with_items("running", false), now);
         assert!(!fx.contains(&Effect::PrewarmRaceItems), "{fx:?}");
+    }
+
+    #[test]
+    fn auth_ok_of_a_relay_race_prewarms_the_speffect_apply_only() {
+        let now = Instant::now();
+        let mut relay = RaceMachine::new(1, String::new(), false, now);
+        let fx = relay.handle_message(relay_auth("running", Some(relay_info("waiting"))), now);
+        assert!(fx.contains(&Effect::PrewarmSpEffectApply), "{fx:?}");
+        // Not the race items' other game access: this race has none.
+        assert!(!fx.contains(&Effect::PrewarmRaceItems), "{fx:?}");
+
+        let mut plain = RaceMachine::new(1, String::new(), false, now);
+        let fx = plain.handle_message(relay_auth("running", None), now);
+        assert!(!fx.contains(&Effect::PrewarmSpEffectApply), "{fx:?}");
     }
 
     #[test]
