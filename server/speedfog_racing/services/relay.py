@@ -1,7 +1,9 @@
-"""Relay races: the seed capability and the block a relay seed carries.
+"""Relay races: the seed capability and the block a relay seed carries, and
+the pure rules and readers of the teams, the baton and the boss loot.
 
-A relay seed is a seed whose ``graph.json`` has a top-level ``relay`` object
-(the generator writes it when its relay plugin is enabled).
+A relay seed is a seed whose ``graph.json`` carries the whole 4.16 ``relay``
+block (``seed_has_relay``): the flags the mod drives and the loot of the
+graph's bosses, which the generator writes when its relay plugin is enabled.
 """
 
 import logging
@@ -80,15 +82,10 @@ RELAY_REFUSAL_MESSAGES: dict[RelayRefusal, str] = {
 
 
 def seed_has_relay(graph_json: Mapping[str, Any]) -> bool:
-    """Whether a seed supports relay races: it carries the graph.json 4.16
-    block, a ``relay`` object holding a ``loot`` object (possibly empty) and an
-    integer ``roundtable_warp_flag``. An earlier block, or a seed exported
-    without a build, is not a relay seed."""
-    block = graph_json.get(RELAY_PLUGIN)
-    if not isinstance(block, dict) or not isinstance(block.get("loot"), dict):
-        return False
-    warp = block.get("roundtable_warp_flag")
-    return isinstance(warp, int) and not isinstance(warp, bool)
+    """Whether a seed supports relay races: it carries the whole graph.json
+    4.16 block (``relay_flags``). An earlier block, a seed exported without a
+    build, or a block missing a flag the mod reads is not a relay seed."""
+    return relay_flags(graph_json) is not None
 
 
 def relay_seed_clause() -> ColumnElement[bool]:
@@ -99,16 +96,23 @@ def relay_seed_clause() -> ColumnElement[bool]:
 
 
 def relay_flags(graph_json: Mapping[str, Any]) -> dict[str, int] | None:
-    """The integer keys of the seed's relay block but ``warp_flag_count``, or
-    None for a plain seed."""
-    if not seed_has_relay(graph_json):
+    """The flags of the seed's 4.16 relay block, one per field of
+    ``RelayFlags`` (the block's keys but ``warp_flag_count`` and ``loot``),
+    or None unless the block is an object holding a ``loot`` object (possibly
+    empty) and each of those flags as an integer: what ``seed_has_relay``
+    tells, so a relay seed's flags always build the ``RelayFlags`` a mod is
+    sent."""
+    # Local import: websocket.schemas pulls in the services package, which
+    # imports this module.
+    from speedfog_racing.websocket.schemas import RelayFlags
+
+    block = graph_json.get(RELAY_PLUGIN)
+    if not isinstance(block, dict) or not isinstance(block.get("loot"), dict):
         return None
-    block: Mapping[str, Any] = graph_json[RELAY_PLUGIN]
-    return {
-        k: v
-        for k, v in block.items()
-        if k != "warp_flag_count" and isinstance(v, int) and not isinstance(v, bool)
-    }
+    flags: dict[str, Any] = {key: block.get(key) for key in RelayFlags.model_fields}
+    if not all(isinstance(v, int) and not isinstance(v, bool) for v in flags.values()):
+        return None
+    return flags
 
 
 def relay_cap(total_layers: int, active_members: int) -> int:

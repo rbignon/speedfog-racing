@@ -722,7 +722,7 @@ Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state:
 - `role`: `holder` only for the team's holder while the baton is not free. Once the baton is free (a take nobody acknowledged), the nominal holder reads `waiting` with `baton_free_in_s: 0`, locks again, and may take the baton back like any teammate.
 - `gates_locked`: true for a holder at or over their cap.
 - `baton_free_in_s`: 0 when the baton is free (a take nobody acknowledged, or no holder), whatever the holder's connection; otherwise null while the holder is online, else the seconds before the baton can be taken (the offline wait is 60 s, counted from the holder's disconnect, from the race start for a holder not connected then (the countdown's end: 60 through the countdown), or from a server restart; the whole 60 until the absence is recorded; never above 60).
-- `flags`: the integer keys of the seed's `relay` block but `warp_flag_count` (not `loot`).
+- `flags`: the flags of the seed's `relay` block, every key but `warp_flag_count` and `loot` (a seed whose block lacks one of them, or holds one that is not an integer, is not a relay seed).
 - `token`: the receiving member's own save token, from 1 to 2^24 - 1 (`token_bits`), null until their save is validated (their first report after the start, the team's first holder included). Drawn once per validation and sent only to that member: no `members[]` entry carries a token. The mod writes it into the save and confirms with `relay_bound`.
 - `bound`: true once the server recorded the member's `relay_bound` with that token. A race reset clears both (`token` null, `bound` false). Server side in `docs/RELAY.md` ("One character per member").
 

@@ -64,9 +64,12 @@ async def test_upgrade_keeps_only_the_4_16_block_and_downgrade_restores_the_old_
             rows = await db.execute(select(Seed.seed_number, Seed.relay))
             return dict(rows.all())
 
-        await db.execute(text(migration._UPGRADE_SQLITE))
+        upgrade = await db.execute(text(migration._UPGRADE_SQLITE))
         await db.commit()
         db.expire_all()
+        # The rule only narrowed: a row the old rule left false is never read,
+        # and of the others only the one the new rule rejects is written.
+        assert upgrade.rowcount == 1  # type: ignore[attr-defined]
         assert await relay_column() == {
             "rb_new": True,
             "rb_no_boss": True,

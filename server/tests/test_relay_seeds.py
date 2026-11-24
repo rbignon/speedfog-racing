@@ -44,14 +44,24 @@ def _plain_graph() -> dict:
         ({**RELAY_BLOCK, "roundtable_warp_flag": "1050290504"}, False),
         ({**RELAY_BLOCK, "loot": []}, False),
         ({**RELAY_BLOCK, "loot": {}}, True),  # a seed with no boss
+        # A flag the mod reads, missing or not an integer.
+        ({k: v for k, v in RELAY_BLOCK.items() if k != "token_bits"}, False),
+        ({k: v for k, v in RELAY_BLOCK.items() if k != "travel_lock_flag"}, False),
+        ({**RELAY_BLOCK, "token_flag_base": "1050297900"}, False),
+        ({**RELAY_BLOCK, "lock_flag": True}, False),
         ({}, False),
         ("x", False),
         (None, False),
     ],
 )
-def test_only_a_4_16_block_makes_a_relay_seed(block, expected):
+def test_only_a_whole_4_16_block_makes_a_relay_seed_with_its_flags(block, expected):
     graph = {"nodes": {}} if block is None else {"nodes": {}, "relay": block}
     assert seed_has_relay(graph) is expected
+    # relay_flags agrees, and what it returns builds the flags auth_ok.relay carries.
+    flags = relay_flags(graph)
+    assert (flags is not None) is expected
+    if flags is not None:
+        RelayFlags(**flags)
 
 
 def test_relay_flags_are_the_integers_of_the_block_without_the_count():

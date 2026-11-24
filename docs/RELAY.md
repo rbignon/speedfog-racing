@@ -46,14 +46,19 @@ share:
 | `token_bits`           | 24         | how many token flags follow the base                                                                                                                                      |
 | `loot`                 | object     | what each boss gives, keyed by the boss's defeat flag: `runes`, `rune_speffect`, `received_flag`, `pickup_flags` and `items` (`id`, `qty`); empty for a seed with no boss |
 
-`Seed.relay` is true when `relay` is the 4.16 block: an object holding a `loot`
-object (possibly empty) and an integer `roundtable_warp_flag` (`seed_has_relay` in
-`services/relay.py`). A seed exported without a build, or with an earlier block,
-is not a relay seed. The pool scan sets it when it adds a seed, and an indexed
-column serves every filter, so no query parses `graph_json`. The migrations
-backfill the seeds scanned before the column existed and recompute it when the
-rule changes. `relay_flags` returns the block's integer keys but `warp_flag_count`
-(so not `loot`).
+`Seed.relay` is true when `relay` is the whole 4.16 block: an object holding a
+`loot` object (possibly empty) and each flag of the table but `warp_flag_count` as
+an integer (`seed_has_relay` in `services/relay.py`). A seed exported without a
+build, an earlier block, or a block missing one of those flags is not a relay seed.
+The pool scan sets it when it adds a seed, and an indexed column serves every
+filter, so no query parses `graph_json`. The migrations backfill the seeds scanned
+before the column existed and recompute it when the rule changes; the one for the
+4.16 block tells that block by its `loot` object and its integer
+`roundtable_warp_flag`, the keys that first appear in it, and reads only the rows
+marked relay, since the rule only narrowed. `relay_flags` returns those flags, the
+fields of `RelayFlags` (neither `warp_flag_count` nor `loot`), and None exactly when
+`seed_has_relay` is false: a relay seed's flags always build the `RelayFlags` a mod
+is sent.
 
 A relay race draws only relay seeds (`get_available_seed(..., require_relay=True)`,
 the same AVAILABLE then SEEN fallback and speedrun floor as any normal draw). When
