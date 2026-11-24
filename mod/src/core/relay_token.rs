@@ -57,6 +57,14 @@ pub fn writes(base: u32, bits: u32, token: u32) -> Vec<(u32, bool)> {
         .collect()
 }
 
+/// Whether `bits` token flags hold `token`: no more flags than a token has
+/// bits, and none of its bits past the last flag. Flags that cannot hold it
+/// would read back another value, or be read and written past the token's
+/// width.
+pub fn fits(bits: u32, token: u32) -> bool {
+    bits <= u32::BITS && token.checked_shr(bits).unwrap_or(0) == 0
+}
+
 /// The verdict on a save whose token flags read `read`, for a member whose
 /// token is `expected` (`None`: none drawn yet) and is `bound` or not.
 pub fn judge(expected: Option<u32>, bound: bool, read: u32) -> Verdict {
@@ -86,6 +94,15 @@ mod tests {
             assert_eq!(flags[0].0, 1_050_297_900);
             assert_eq!(value_of(flags.iter().map(|f| f.1)), token);
         }
+    }
+
+    #[test]
+    fn a_token_fits_only_flags_that_hold_each_of_its_bits() {
+        assert!(fits(24, (1 << 24) - 1));
+        assert!(!fits(24, 1 << 24));
+        assert!(fits(32, u32::MAX));
+        assert!(!fits(33, 1), "more flags than a token has bits");
+        assert!(!fits(0, 1));
     }
 
     #[test]
