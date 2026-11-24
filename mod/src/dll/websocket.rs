@@ -65,6 +65,9 @@ pub enum OutgoingMessage {
     RelayReady {
         ready: bool,
     },
+    RelayBound {
+        token: u32,
+    },
     RelayState {
         handoff_id: Option<String>,
         state: CharacterState,
@@ -227,6 +230,14 @@ impl RaceWebSocketClient {
     pub fn send_relay_ready(&self, ready: bool) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::RelayReady { ready }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_relay_bound(&self, token: u32) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::RelayBound { token }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -465,9 +476,11 @@ fn websocket_thread(
                         // re-sends its grant at auth, and the reconnect
                         // frame reports the inventory again. A relay_ready
                         // goes again on the reconnection frame (readiness
-                        // does not survive the socket), a relay_release dies
-                        // with its socket (the server drops it at the
-                        // disconnect), the server sends a take still awaited
+                        // does not survive the socket), a relay_bound after
+                        // the read of the token every auth_ok asks for, a
+                        // relay_release dies with its socket (the server
+                        // drops it at the disconnect), the server sends a
+                        // take still awaited
                         // again after auth_ok (a relay_taken lost here is
                         // answered again then), and a handoff or take request
                         // is the player's to make again.
@@ -755,6 +768,15 @@ fn message_loop(
             Ok(OutgoingMessage::RelayReady { ready }) => {
                 info!(ready, "[WS] Sending: relay_ready");
                 let msg = ClientMessage::RelayReady { ready };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::RelayBound { token }) => {
+                // The token binds the member to a save: never logged.
+                info!("[WS] Sending: relay_bound");
+                let msg = ClientMessage::RelayBound { token };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))

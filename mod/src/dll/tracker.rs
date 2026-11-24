@@ -692,6 +692,11 @@ impl RaceTracker {
                 position_readable: map_id.is_some(),
                 map_id,
                 hp: needs.hp.then(|| self.game_state.read_hp()).flatten(),
+                // Only on the frames a read of the save's token is due, and
+                // never during a load (its flags are not the save's yet).
+                relay_token: needs.relay_token.filter(|_| map_id.is_some()).and_then(
+                    |(base, bits)| relay::read_token(&self.event_flag_reader, base, bits),
+                ),
                 loading_screen: needs
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())
@@ -926,6 +931,9 @@ impl RaceTracker {
                 }
                 Effect::SendRelayReady { ready } => {
                     self.ws_client.send_relay_ready(ready);
+                }
+                Effect::SendRelayBound { token } => {
+                    self.ws_client.send_relay_bound(token);
                 }
                 Effect::SendRelayState {
                     handoff_id,

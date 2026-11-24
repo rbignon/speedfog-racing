@@ -1,11 +1,14 @@
 //! Relay race game access for the shell: the capture of what a handoff
-//! carries (the graces lit), and the apply of a take (the plan of the flags
-//! to raise, the flag raises). The capture and the plan read on the shell's
-//! relay worker thread, never on the tracker's frame thread nor per frame;
-//! the writes are made on the tracker's frame thread (the Present hook, not
-//! the game's own threads), `step_writer` a bounded batch per frame. What
-//! the reads must pass, what a state holds and what an apply writes is
-//! decided in `core::relay_capture` and `core::relay_apply`.
+//! carries (the graces lit), the apply of a take (the plan of the flags to
+//! raise, the flag raises), and the read of the save's token. The capture
+//! and the plan read on the shell's relay worker thread, never on the
+//! tracker's frame thread nor per frame; the writes are made on the
+//! tracker's frame thread (the Present hook, not the game's own threads),
+//! `step_writer` a bounded batch per frame. The token is read on the frame
+//! thread, on the frames the machine asks for it only (`read_token`). What
+//! the reads must pass, what a state holds, what an apply writes and what a
+//! token read means is decided in `core::relay_capture`,
+//! `core::relay_apply` and `core::relay_token`.
 //!
 //! ### Sources
 //!
@@ -14,6 +17,8 @@
 //!   capture: it is warned once and left empty (no grace transfers).
 //! - Graces lit: each grace flag through `EventFlagReader::is_flag_set`.
 //! - Flag raises: `EventFlagReader::set_flag_cached`.
+//! - Token: the token flags through `EventFlagReader::is_flag_set_fast`, on
+//!   their category page resolved once per read.
 //!
 //! ### Reading off the frame thread
 //!
@@ -51,6 +56,7 @@ use crate::core::relay_apply::{self, ApplyPlan, ApplyStep};
 use crate::core::relay_capture::{
     build_state, grace_flag_ids, lit_flags, no_load_between, CaptureFailure,
 };
+use crate::core::relay_token;
 use crate::profile_span;
 
 /// The grace flags (`core::relay_capture::grace_flag_ids` over the
@@ -195,6 +201,24 @@ pub fn plan_apply(defeat_flags: &[u32], state_graces: &[u32], generation: u64) -
         "[RELAY] Apply planned"
     );
     plan
+}
+
+/// The value the relay token flags hold (`bits` flags from `base`, bit `i`
+/// in flag `base + i`: `core::relay_token::value_of`), on the tracker's frame
+/// thread, on a frame the machine asked for it: `None` when the category page
+/// does not resolve or any flag cannot be read. The page is resolved once
+/// and each flag read from it (a flag of another category falls back to a
+/// full lookup).
+pub fn read_token(reader: &EventFlagReader, base: u32, bits: u32) -> Option<u32> {
+    profile_span!("relay.read_token");
+    let page = reader.resolve_category(base)?;
+    let mut unreadable = false;
+    let value = relay_token::value_of((0..bits).map_while(|i| {
+        let set = reader.is_flag_set_fast(base.wrapping_add(i), &page);
+        unreadable |= set.is_none();
+        set
+    }));
+    (!unreadable).then_some(value)
 }
 
 /// The writer of an apply's steps for one frame, on the tracker's frame

@@ -1187,14 +1187,14 @@ impl RaceTracker {
     }
 
     /// Danger banner shown while the machine detected a wrong save file
-    /// (impossible IGT forward jump). Cleared automatically when the race
-    /// save is reloaded.
+    /// (impossible IGT forward jump, or a relay token that is not the
+    /// runner's). Cleared automatically when the race save is reloaded.
     fn render_wrong_save_warning(&self, ui: &hudhook::imgui::Ui) {
         let _small = self
             .overlay_fonts
             .as_ref()
             .map(|f| ui.push_font(f.body_small));
-        if self.machine.wrong_save {
+        if self.machine.wrong_save || self.machine.relay_wrong_token {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "WRONG SAVE LOADED");
             ui.text_colored(danger, "Reload your race save");
