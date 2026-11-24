@@ -1045,6 +1045,17 @@ impl RaceTracker {
                         }
                     }
                 }
+                Effect::WriteRelayToken { flags } => {
+                    // A count only: a flag or a value would spell the token.
+                    let failed = relay::write_token(&self.event_flag_reader, &flags);
+                    if failed > 0 {
+                        warn!(
+                            failed,
+                            total = flags.len(),
+                            "[RELAY] Token flags not written"
+                        );
+                    }
+                }
                 Effect::ApplyIgtPenalty { ms } => match self.game_state.add_igt_penalty(ms) {
                     Some(new_igt) => {
                         info!(ms, new_igt, "[RACE] Quit-out IGT penalty applied");

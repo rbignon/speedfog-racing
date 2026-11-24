@@ -5,7 +5,8 @@
 //! tracker's frame thread nor per frame; the writes are made on the
 //! tracker's frame thread (the Present hook, not the game's own threads),
 //! `step_writer` a bounded batch per frame. The token is read on the frame
-//! thread, on the frames the machine asks for it only (`read_token`). What
+//! thread, on the frames the machine asks for it only (`read_token`), and
+//! written there too (`write_token`), its flags and values never logged. What
 //! the reads must pass, what a state holds, what an apply writes and what a
 //! token read means is decided in `core::relay_capture`,
 //! `core::relay_apply` and `core::relay_token`.
@@ -17,8 +18,9 @@
 //!   capture: it is warned once and left empty (no grace transfers).
 //! - Graces lit: each grace flag through `EventFlagReader::is_flag_set`.
 //! - Flag raises: `EventFlagReader::set_flag_cached`.
-//! - Token: the token flags through `EventFlagReader::is_flag_set_fast`, on
-//!   their category page resolved once per read.
+//! - Token: the token flags through `EventFlagReader::is_flag_set_fast` and
+//!   `set_flag_cached`, on their category page resolved once per read or
+//!   write.
 //!
 //! ### Reading off the frame thread
 //!
@@ -219,6 +221,22 @@ pub fn read_token(reader: &EventFlagReader, base: u32, bits: u32) -> Option<u32>
         set
     }));
     (!unreadable).then_some(value)
+}
+
+/// Write the relay token's flags, each to its value
+/// (`core::relay_token::writes`), on the tracker's frame thread: the category
+/// page resolved once from the first flag and reused (a flag of another
+/// category falls back to a full lookup). Returns how many could not be
+/// written. Logs nothing: the flags and their values spell the token.
+pub fn write_token(reader: &EventFlagReader, flags: &[(u32, bool)]) -> usize {
+    profile_span!("relay.write_token");
+    let page = flags
+        .first()
+        .and_then(|&(flag, _)| reader.resolve_category(flag));
+    flags
+        .iter()
+        .filter(|&&(flag, value)| !reader.set_flag_cached(flag, value, page.as_ref()))
+        .count()
 }
 
 /// The writer of an apply's steps for one frame, on the tracker's frame
