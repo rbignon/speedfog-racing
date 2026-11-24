@@ -14116,6 +14116,7 @@ mod tests {
                 let map = if warping { Some(IN_ZONE) } else { roundtable() };
                 let fx = go_over(&mut m, t0, 6_100, 12_000, map);
                 assert_eq!(times_of(&fx, &lock(false)), [6_100], "{name} {warping}");
+                assert_eq!(times_of(&fx, &travel(false)), [6_100], "{name} {warping}");
                 assert!(!fx.iter().any(|(_, e)| *e == warp(true)), "{name}");
                 assert!(!fx.iter().any(|(_, e)| *e == ready(true)), "{name}");
                 // An auth_ok sends the value again whatever it was.
@@ -14137,6 +14138,7 @@ mod tests {
         let fx = go(&mut m, t0, 5_700, Some(IN_ZONE));
         assert!(fx.contains(&warp(false)), "{fx:?}");
         assert!(fx.contains(&lock(false)));
+        assert!(fx.contains(&travel(false)), "{fx:?}");
         let fx = go_over(&mut m, t0, 5_800, 20_000, Some(IN_ZONE));
         assert!(!fx.iter().any(|(_, e)| *e == warp(true)));
     }
@@ -14524,6 +14526,15 @@ mod tests {
                     !fx.iter().any(|(_, e)| *e == lock(!before.unwrap())),
                     "{what} {locked}"
                 );
+                if what == "role" {
+                    // The travel lock is left alone with the lock.
+                    assert!(
+                        !fx.iter()
+                            .any(|(_, e)| matches!(e, Effect::SetGameFlag { flag_id, .. }
+                            if *flag_id == TRAVEL_LOCK)),
+                        "{what} {locked}: {fx:?}"
+                    );
+                }
                 assert!(
                     !fx.iter().any(|(_, e)| *e == ready(true)),
                     "{what} {locked}"
