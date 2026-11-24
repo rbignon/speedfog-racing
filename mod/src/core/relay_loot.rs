@@ -5,10 +5,11 @@
 //! and the game's own give functions; this module says which flags a
 //! decision needs and in what order they are read (`decide_reading`), what an
 //! entry needs from what they read (`decide`), carries the decision out
-//! through the shell's access (`carry_out`) and orders the entries that wait
-//! for a frame (`LootQueue`, a mark owed after a give included). The race machine decides on which frame an
-//! entry is given (`RaceMachine::maintain_relay_loot`). Pure: nothing here
-//! reads the game or logs.
+//! through the shell's access (`carry_out`), says why nothing was done when
+//! nothing was (`LootSnag`) and orders the entries that wait for a frame
+//! (`LootQueue`, a mark owed after a give included). The race machine decides
+//! on which frame an entry is given (`RaceMachine::maintain_relay_loot`).
+//! Pure: nothing here reads the game or logs.
 
 use std::time::{Duration, Instant};
 
@@ -73,19 +74,19 @@ pub fn decide(
 /// or the message is `paid`, the boss's defeat flag; only when that one
 /// reads up, the pickup flags in order, up to the first that reads up. The
 /// list after each `auth_ok` repeats every entry received: most cost one
-/// read.
+/// read. `Err`: which flag the decision needs did not read.
 pub fn decide_reading(
     entry: &RelayLootEntry,
     paid: bool,
     mut read: impl FnMut(u32) -> Option<bool>,
-) -> Option<LootAction> {
+) -> Result<LootAction, LootSnag> {
     let received = read(entry.received_flag);
     if received != Some(false) || paid {
-        return decide(received, paid, None, &[]);
+        return decide(received, paid, None, &[]).ok_or(LootSnag::ReceivedUnread);
     }
     let defeated = read(entry.flag);
     if defeated != Some(true) {
-        return decide(received, paid, defeated, &[]);
+        return decide(received, paid, defeated, &[]).ok_or(LootSnag::DefeatUnread);
     }
     let mut pickups = Vec::with_capacity(entry.pickup_flags.len());
     for &flag in &entry.pickup_flags {
@@ -95,7 +96,7 @@ pub fn decide_reading(
             break;
         }
     }
-    decide(received, paid, defeated, &pickups)
+    decide(received, paid, defeated, &pickups).ok_or(LootSnag::PickupUnread)
 }
 
 /// The (item id, units) to give, in the entry's order, cut at
@@ -133,10 +134,26 @@ pub enum LootOutcome {
         rune_refused: bool,
         marked: bool,
     },
-    /// Nothing done, to try later: a flag it needed did not read, the
-    /// received flag of a mark could not be raised, or the game could not
-    /// take its first give (the give function or the player not there).
-    Unreadable,
+    /// Nothing done, to try later, and why.
+    NotDone(LootSnag),
+}
+
+/// Why nothing was done to an entry handed to the shell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LootSnag {
+    /// Its received flag did not read.
+    ReceivedUnread,
+    /// The boss's defeat flag did not read.
+    DefeatUnread,
+    /// A pickup flag did not read, and none read up.
+    PickupUnread,
+    /// The game did not take the first unit (the give function or the
+    /// player not there).
+    UnitRefused,
+    /// The game did not take the rune effect of an entry with no item.
+    RuneRefused,
+    /// The received flag of a mark could not be raised.
+    MarkNotRaised,
 }
 
 /// Carry `action` out on `entry` through the shell's access to the game:
@@ -164,7 +181,7 @@ pub fn carry_out(
             if raise(entry.received_flag) {
                 LootOutcome::Marked
             } else {
-                LootOutcome::Unreadable
+                LootOutcome::NotDone(LootSnag::MarkNotRaised)
             }
         }
         LootAction::Give => {
@@ -175,7 +192,7 @@ pub fn carry_out(
                     if give_unit(id) {
                         given += 1;
                     } else if given == 0 {
-                        return LootOutcome::Unreadable;
+                        return LootOutcome::NotDone(LootSnag::UnitRefused);
                     } else {
                         failed += 1;
                     }
@@ -184,7 +201,7 @@ pub fn carry_out(
             let rune_refused = match entry.rune_speffect {
                 Some(speffect) if !apply_rune(speffect) => {
                     if given == 0 {
-                        return LootOutcome::Unreadable;
+                        return LootOutcome::NotDone(LootSnag::RuneRefused);
                     }
                     true
                 }
@@ -212,9 +229,9 @@ struct Waiting {
     entry: RelayLootEntry,
     paid: bool,
     /// Given by this session, its received flag not raised: it owes its
-    /// mark only (`paid` with it).
+    /// mark only (`paid` with it), and its tries never drop it.
     owed: bool,
-    /// Tries that did nothing so far.
+    /// Tries that did nothing so far (for a mark owed, since the give).
     tries: u32,
     /// Not handed out before this.
     due: Instant,
@@ -240,13 +257,17 @@ impl LootQueue {
     /// Queue `entry`; one of the same flag waiting already is replaced in
     /// its place, with its due time, `paid` kept if either is (the killer's
     /// entry stays paid when the list of a reconnection sends it again) and
-    /// a mark it owes kept, its tries started again.
+    /// a mark it owes kept, its tries started again unless it owes a mark
+    /// (whose tries drop nothing: their count only says when it passed
+    /// `LOOT_TRIES_MAX`).
     pub fn push(&mut self, entry: RelayLootEntry, paid: bool, now: Instant) {
         match self.waiting.iter_mut().find(|w| w.entry.flag == entry.flag) {
             Some(w) => {
                 w.entry = entry;
                 w.paid |= paid;
-                w.tries = 0;
+                if !w.owed {
+                    w.tries = 0;
+                }
             }
             None => self.waiting.push(Waiting {
                 entry,
@@ -281,30 +302,51 @@ impl LootQueue {
 
     /// Put back the entry `next` handed out, nothing done to it, due again
     /// `LOOT_RETRY` after `now`, a mark it owes kept. False when this was
-    /// its last try (`LOOT_TRIES_MAX`): it is dropped. One of the same flag
-    /// queued since it was handed out stays as it is, with the paid and the
-    /// mark owed of either.
+    /// its last try (`LOOT_TRIES_MAX`): it is dropped, unless it owes a mark,
+    /// which stays until it is raised, its received flag reads up or the
+    /// queue is cleared. One of the same flag queued since it was handed out
+    /// stays as it is, with the paid and the mark owed of either.
     pub fn retry(&mut self, entry: RelayLootEntry, paid: bool, now: Instant) -> bool {
         self.put_back(entry, paid, false, now)
     }
 
     /// Put back the entry `next` handed out, given but its received flag
-    /// not raised, to be marked only (paid), as `retry` puts an entry back:
-    /// the same delay, the same tries.
-    pub fn owe_mark(&mut self, entry: RelayLootEntry, now: Instant) -> bool {
-        self.put_back(entry, true, true, now)
+    /// not raised, to be marked only (paid), after `retry`'s delay; that
+    /// failed mark is the first of its tries.
+    pub fn owe_mark(&mut self, entry: RelayLootEntry, now: Instant) {
+        self.put_back(entry, true, true, now);
     }
 
-    fn put_back(&mut self, entry: RelayLootEntry, paid: bool, owed: bool, now: Instant) -> bool {
+    /// The tries the entry of `flag` waiting in the queue has used; `None`
+    /// when none waits.
+    pub fn tries(&self, flag: u32) -> Option<u32> {
+        self.waiting
+            .iter()
+            .find(|w| w.entry.flag == flag)
+            .map(|w| w.tries)
+    }
+
+    /// Whether an entry is due at `now`.
+    pub fn is_due(&self, now: Instant) -> bool {
+        self.waiting.iter().any(|w| w.due <= now)
+    }
+
+    /// `retry` and `owe_mark` (`owe`: the entry was just given, its mark
+    /// failed).
+    fn put_back(&mut self, entry: RelayLootEntry, paid: bool, owe: bool, now: Instant) -> bool {
         let out = self.out.take().filter(|out| out.flag == entry.flag);
-        let tries = out.as_ref().map_or(0, |out| out.tries) + 1;
-        let owed = owed || out.is_some_and(|out| out.owed);
+        let tries = match &out {
+            Some(_) if owe => 1,
+            Some(out) => out.tries + 1,
+            None => 1,
+        };
+        let owed = owe || out.is_some_and(|out| out.owed);
         if let Some(w) = self.waiting.iter_mut().find(|w| w.entry.flag == entry.flag) {
             w.paid |= paid || owed;
             w.owed |= owed;
             return true;
         }
-        if tries >= LOOT_TRIES_MAX {
+        if tries >= LOOT_TRIES_MAX && !owed {
             return false;
         }
         self.waiting.push(Waiting {
@@ -504,14 +546,14 @@ mod tests {
     fn a_first_give_refused_leaves_the_entry_whole() {
         // The first unit, or the rune effect of an entry with no item.
         let (outcome, calls) = run(LootAction::Give, &full_entry(), Some(0), true, &[]);
-        assert_eq!(outcome, LootOutcome::Unreadable);
+        assert_eq!(outcome, LootOutcome::NotDone(LootSnag::UnitRefused));
         assert_eq!(calls, [("unit", 10)]);
         let runes_only = RelayLootEntry {
             items: Vec::new(),
             ..full_entry()
         };
         let (outcome, calls) = run(LootAction::Give, &runes_only, None, false, &[]);
-        assert_eq!(outcome, LootOutcome::Unreadable);
+        assert_eq!(outcome, LootOutcome::NotDone(LootSnag::RuneRefused));
         assert_eq!(calls, [("rune", 755_891_000)]);
     }
 
@@ -564,7 +606,7 @@ mod tests {
             true,
             &[1_050_297_000],
         );
-        assert_eq!(outcome, LootOutcome::Unreadable);
+        assert_eq!(outcome, LootOutcome::NotDone(LootSnag::MarkNotRaised));
         let (outcome, calls) = run(LootAction::Skip, &full_entry(), None, true, &[]);
         assert_eq!(outcome, LootOutcome::AlreadyReceived);
         assert!(calls.is_empty());
@@ -624,7 +666,7 @@ mod tests {
         q.push(entry(7), false, t);
         let (e, _) = q.next(t).unwrap();
         assert!(!q.owes_mark(7));
-        assert!(q.owe_mark(e, t));
+        q.owe_mark(e, t);
         assert!(q.next(t).is_none(), "waits its retry delay");
         // A list sending it again does not make it a give again.
         q.push(entry(7), false, t);
@@ -642,7 +684,7 @@ mod tests {
         e: &RelayLootEntry,
         paid: bool,
         values: &[(u32, Option<bool>)],
-    ) -> (Option<LootAction>, Vec<u32>) {
+    ) -> (Result<LootAction, LootSnag>, Vec<u32>) {
         let mut read = Vec::new();
         let action = decide_reading(e, paid, |flag| {
             read.push(flag);
@@ -666,38 +708,38 @@ mod tests {
         // Received or unreadable: the received flag only.
         assert_eq!(
             read_decision(&e, false, &[(received, up)]),
-            (Some(Skip), vec![received])
+            (Ok(Skip), vec![received])
         );
         assert_eq!(
             read_decision(&e, false, &[(received, None)]),
-            (None, vec![received])
+            (Err(LootSnag::ReceivedUnread), vec![received])
         );
         // Paid: the received flag only.
-        assert_eq!(
-            read_decision(&e, true, &[]),
-            (Some(MarkOnly), vec![received])
-        );
+        assert_eq!(read_decision(&e, true, &[]), (Ok(MarkOnly), vec![received]));
         // Never fought here, or the defeat flag unreadable: no pickup read.
         assert_eq!(
             read_decision(&e, false, &[]),
-            (Some(Give), vec![received, boss])
+            (Ok(Give), vec![received, boss])
         );
         assert_eq!(
             read_decision(&e, false, &[(boss, None)]),
-            (None, vec![received, boss])
+            (Err(LootSnag::DefeatUnread), vec![received, boss])
         );
         // Defeated here: the pickup flags in order, up to the first up.
         assert_eq!(
             read_decision(&e, false, &[(boss, up), (65_420, up)]),
-            (Some(MarkOnly), vec![received, boss, 510_060, 65_420])
+            (Ok(MarkOnly), vec![received, boss, 510_060, 65_420])
         );
         assert_eq!(
             read_decision(&e, false, &[(boss, up), (510_060, None)]),
-            (None, vec![received, boss, 510_060, 65_420, 65_421])
+            (
+                Err(LootSnag::PickupUnread),
+                vec![received, boss, 510_060, 65_420, 65_421]
+            )
         );
         assert_eq!(
             read_decision(&e, false, &[(boss, up), (65_421, down)]),
-            (Some(Give), vec![received, boss, 510_060, 65_420, 65_421])
+            (Ok(Give), vec![received, boss, 510_060, 65_420, 65_421])
         );
     }
 
@@ -723,7 +765,7 @@ mod tests {
                                 table.extend(pickup.iter().copied().zip(pickups.iter().copied()));
                                 let (action, _) = read_decision(&e, paid, &table);
                                 assert_eq!(
-                                    action,
+                                    action.ok(),
                                     decide(r, paid, d, pickups),
                                     "{paid} {r:?} {d:?} {pickups:?}"
                                 );
@@ -733,5 +775,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_mark_owed_is_never_dropped_by_its_tries() {
+        let mut now = Instant::now();
+        let mut q = LootQueue::default();
+        q.push(entry(7), false, now);
+        // Given, its received flag not raised: the mark's count starts.
+        let (e, _) = q.next(now).unwrap();
+        q.owe_mark(e, now);
+        assert_eq!(q.tries(7), Some(1));
+        // A list sending it again keeps its count.
+        q.push(entry(7), false, now);
+        assert_eq!(q.tries(7), Some(1));
+        let mut at_bound = 0;
+        for _ in 0..LOOT_TRIES_MAX + 5 {
+            now += LOOT_RETRY;
+            let (e, paid) = q.next(now).unwrap();
+            assert!(paid && q.owes_mark(7));
+            assert!(q.retry(e, paid, now), "an owed mark is kept");
+            if q.tries(7) == Some(LOOT_TRIES_MAX) {
+                at_bound += 1;
+            }
+        }
+        assert_eq!(at_bound, 1, "the bound is reached once");
+        // The failed mark of the give, then every retry.
+        assert_eq!(q.tries(7), Some(1 + LOOT_TRIES_MAX + 5));
     }
 }

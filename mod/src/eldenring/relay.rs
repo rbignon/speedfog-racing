@@ -255,28 +255,28 @@ pub fn write_token(reader: &EventFlagReader, flags: &[(u32, bool)]) -> usize {
 /// through the item spawner, the rune effect through the SpEffect apply
 /// function, the flags raised through the event flag reader. A flag that
 /// cannot be raised is warned, with its id; a give whose received flag it
-/// is says so (`LootOutcome::Given { marked: false, .. }`). `Unreadable`
-/// when nothing was done: a flag the decision needs did not read, the game
-/// refused the first give, or a mark's received flag could not be raised.
+/// is says so (`LootOutcome::Given { marked: false, .. }`). `NotDone` with
+/// its cause when nothing was done: a flag the decision needs did not read
+/// (which one), the game refused the first give (a unit, or the rune effect
+/// of an entry with no item), or a mark's received flag could not be raised.
 pub fn apply_loot(reader: &EventFlagReader, entry: &RelayLootEntry, paid: bool) -> LootOutcome {
     profile_span!("relay.apply_loot");
-    let Some(action) = relay_loot::decide_reading(entry, paid, |flag| reader.is_flag_set(flag))
-    else {
-        return LootOutcome::Unreadable;
-    };
-    relay_loot::carry_out(
-        action,
-        entry,
-        item_spawner::inject_one,
-        sp_effect_apply::apply_speffect,
-        |flag| {
-            let raised = reader.set_flag(flag, true);
-            if !raised {
-                warn!(flag, "[RELAY] Loot flag not raised");
-            }
-            raised
-        },
-    )
+    match relay_loot::decide_reading(entry, paid, |flag| reader.is_flag_set(flag)) {
+        Ok(action) => relay_loot::carry_out(
+            action,
+            entry,
+            item_spawner::inject_one,
+            sp_effect_apply::apply_speffect,
+            |flag| {
+                let raised = reader.set_flag(flag, true);
+                if !raised {
+                    warn!(flag, "[RELAY] Loot flag not raised");
+                }
+                raised
+            },
+        ),
+        Err(cause) => LootOutcome::NotDone(cause),
+    }
 }
 
 /// The writer of an apply's steps for one frame, on the tracker's frame
