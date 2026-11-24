@@ -1,24 +1,33 @@
 """Relay boss loot: what a counted kill sends the team, and the catch-up after a connection."""
 
+import json
 import logging
 from typing import Any
 
 import pytest
 
+import speedfog_racing.websocket.race.relay_mod as relay_mod_ws
 from speedfog_racing.services.relay import loot_entry, team_loot
+from speedfog_racing.websocket.handler import extract_boss_flags
 from speedfog_racing.websocket.race.relay import relay_boss_name
+from speedfog_racing.websocket.schemas import RelayLootMessage
 
 from . import test_integration as _integration
 from .relay_fixtures import (
     BOSS_FLAG,
     BOSS_NAME,
     BOSS_NODE,
+    FINAL_NODE,
+    FINISH_FLAG,
     FOG_FLAG,
     RELAY_BLOCK,
+    SECOND_FOG_FLAG,
     START_NODE,
+    THIRD_FOG_FLAG,
     RelayModClient,
     barrier,
     load_team,
+    make_receiver,
     member_view,
     pass_gate,
     progress_graph,
@@ -26,7 +35,9 @@ from .relay_fixtures import (
     setup_relay_race,
     start_relay,
     started_mods,
+    validate,
 )
+from .test_relay_baton import _hand_off, _taken
 
 integration_db = _integration.integration_db
 integration_client = _integration.integration_client
@@ -88,6 +99,14 @@ def _seen_until_barrier(mod: RelayModClient) -> list[str]:
     return [m["type"] for m in mod.skipped]
 
 
+def _loot_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "loot" in r.getMessage()
+    ]
+
+
 def _connect(
     client: Any, relay_race: dict[str, Any], mods: dict[str, RelayModClient], pid: str
 ) -> RelayModClient:
@@ -142,14 +161,46 @@ def test_a_malformed_loot_entry_is_no_entry(bad, caplog):
     ]
 
 
+def test_an_entry_paying_no_rune_and_no_item_goes_out_with_a_null_rune_speffect():
+    raw = {
+        "runes": 0,
+        "rune_speffect": None,
+        "received_flag": 1050297001,
+        "pickup_flags": [],
+        "items": [],
+    }
+    entry = loot_entry({"relay": {**RELAY_BLOCK, "loot": {"10000800": raw}}}, BOSS_FLAG)
+    assert entry is not None
+    wire = json.loads(
+        RelayLootMessage(entries=[entry], paid=False, announce=None).model_dump_json()
+    )
+    assert wire["entries"] == [{**raw, "flag": BOSS_FLAG}]
+
+
 def test_team_loot_follows_the_teams_dead_bosses():
     history = [
         {"node_id": START_NODE, "igt_ms": 0, "type": "spawn"},
         {"node_id": BOSS_NODE, "igt_ms": 9, "type": "fog", "boss_kill_igt_ms": 20},
     ]
     graph = relay_graph(progress_graph())
-    assert [e.flag for e in team_loot(graph, history)] == [BOSS_FLAG]
-    assert team_loot(graph, history[:1]) == []
+    boss_flags = extract_boss_flags(graph)
+    assert [e.flag for e in team_loot(boss_flags, graph, history)] == [BOSS_FLAG]
+    assert team_loot(boss_flags, graph, history[:1]) == []
+
+
+def test_team_loot_leaves_the_final_boss_out(caplog):
+    # A finished team's history marks the final boss killed: its kill is the
+    # finish, and the seed has no loot entry for it.
+    history = [
+        {"node_id": START_NODE, "igt_ms": 0, "type": "spawn"},
+        {"node_id": BOSS_NODE, "igt_ms": 9, "type": "fog", "boss_kill_igt_ms": 20},
+        {"node_id": FINAL_NODE, "igt_ms": 30, "type": "fog", "boss_kill_igt_ms": 40},
+    ]
+    graph = relay_graph(progress_graph())
+    with caplog.at_level(logging.WARNING):
+        loot = team_loot(extract_boss_flags(graph), graph, history)
+    assert [e.flag for e in loot] == [BOSS_FLAG]
+    assert _loot_warnings(caplog) == []
 
 
 @pytest.mark.parametrize(
@@ -185,6 +236,49 @@ def test_a_kill_sends_the_loot_to_the_teammate_and_marks_the_killer_paid(
     assert to_killer["announce"] is None
 
 
+def test_the_kills_loot_comes_before_its_update(relay_race, mods):
+    killer_id = _pid(relay_race, 0, 0)
+    _kill(mods[killer_id])
+    for pid in (killer_id, _pid(relay_race, 0, 1)):
+        assert "relay_loot" in _counted(mods[pid], killer_id), pid
+
+
+def test_a_kill_reported_again_after_a_handoff_sends_no_loot(relay_race, mods):
+    killer_id, mate_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
+    killer, mate = mods[killer_id], mods[mate_id]
+    _kill(killer)
+    _counted(killer, killer_id)
+    make_receiver(mate)
+    _taken(mate, _hand_off(killer, mate))
+    barrier(killer)
+
+    # The take wrote the boss's defeat flag into the new holder's game, which
+    # its mod reports: the same kill, at the team's IGT.
+    mate.send_event_flag(BOSS_FLAG, igt_ms=load_team(relay_race).igt_ms, message_id=7)
+    mate.receive_until("event_flag_ack", lambda m: m["message_id"] == 7)
+
+    for mod in (mate, killer):
+        assert "relay_loot" not in _seen_until_barrier(mod), mod.participant_id
+
+
+def test_a_failed_kill_loot_send_still_sends_the_kills_update(monkeypatch, relay_race, mods):
+    async def fail(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("send failed")
+
+    monkeypatch.setattr(relay_mod_ws, "send_kill_loot", fail)
+    killer_id, mate_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
+    _kill(mods[killer_id])
+
+    # The killer's socket lives (its barrier is answered), and the kill's
+    # update reached the team before that answer.
+    for pid in (killer_id, mate_id):
+        barrier(mods[pid])
+        assert any(
+            m["type"] == "relay_update" and member_view(m, killer_id)["zones"] == 2
+            for m in mods[pid].skipped
+        ), pid
+
+
 def test_the_other_team_and_a_member_out_get_no_loot(integration_client, trio_race, trio_mods):
     killer_id, mate_id, out_id = (_pid(trio_race, 0, i) for i in range(3))
     out_user = trio_race["teams"][0]["members"][2]["user"]
@@ -209,10 +303,11 @@ def test_the_other_team_and_a_member_out_get_no_loot(integration_client, trio_ra
         assert kill_news in seen and "relay_loot" not in seen, pid
 
     # Nor after a connection of its own.
-    _drop(trio_mods, out_id)
-    back = _connect(integration_client, trio_race, trio_mods, out_id)
-    seen = _seen_until_barrier(back)
-    assert "relay_update" in seen and "relay_loot" not in seen
+    for pid in (out_id, _pid(trio_race, 1, 1)):
+        _drop(trio_mods, pid)
+        back = _connect(integration_client, trio_race, trio_mods, pid)
+        seen = _seen_until_barrier(back)
+        assert "relay_update" in seen and "relay_loot" not in seen, pid
 
 
 # --- A connection ---
@@ -246,6 +341,30 @@ def test_a_member_connecting_before_any_kill_gets_no_loot_message(
     assert "relay_update" in seen and "relay_loot" not in seen
 
 
+def test_a_member_of_a_finished_team_gets_no_loot_on_connecting(
+    integration_client, relay_race, mods, caplog
+):
+    killer_id, mate_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
+    killer = mods[killer_id]
+    validate(mods[mate_id])  # played: the finish makes them finished, not out
+    _kill(killer)
+    _counted(killer, killer_id)
+    pass_gate(killer, SECOND_FOG_FLAG, 60_000, 3)
+    pass_gate(killer, THIRD_FOG_FLAG, 80_000, 4)
+    killer.send_event_flag(FINISH_FLAG, igt_ms=100_000, message_id=5)
+    killer.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "finished")
+    _drop(mods, mate_id)
+
+    with caplog.at_level(logging.WARNING):
+        back = _connect(integration_client, relay_race, mods, mate_id)
+        seen = _seen_until_barrier(back)
+    # Finished with the team, not out: only the team's end keeps the loot away.
+    update = next(m for m in back.skipped if m["type"] == "relay_update")
+    assert member_view(update, mate_id)["status"] == "finished"
+    assert "relay_update" in seen and "relay_loot" not in seen
+    assert _loot_warnings(caplog) == []
+
+
 def test_a_kill_without_a_loot_entry_is_counted_and_sends_no_loot(
     integration_client, integration_db, caplog
 ):
@@ -263,12 +382,7 @@ def test_a_kill_without_a_loot_entry_is_counted_and_sends_no_loot(
         assert "relay_loot" not in before
         for mod in mods.values():
             assert "relay_loot" not in _seen_until_barrier(mod)
-        warnings = [
-            r.getMessage()
-            for r in caplog.records
-            if r.levelno == logging.WARNING and "loot" in r.getMessage()
-        ]
-        assert warnings == [f"Relay loot entry missing: flag={BOSS_FLAG}"]
+        assert _loot_warnings(caplog) == [f"Relay loot entry missing: flag={BOSS_FLAG}"]
     finally:
         for mod in mods.values():
             mod.close()

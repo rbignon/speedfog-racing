@@ -1,5 +1,6 @@
 """Relay save binding: the token a member's validation draws, and the mod's ``relay_bound``."""
 
+import logging
 from typing import Any
 
 import pytest
@@ -175,6 +176,44 @@ def test_relay_bound_with_another_token_or_before_validation_changes_nothing(rel
     assert _updates_until_barrier(mate) == 0
     member = load_member(relay_race, mate.participant_id)
     assert (member.relay_token, member.relay_bound) == (token, False)
+
+
+@pytest.mark.parametrize("token", [0, TOKEN_MAX + 1])
+def test_a_relay_bound_outside_the_token_range_is_dropped(relay_race, mods, caplog, token):
+    mate = mods[_pid(relay_race, 0, 1)]
+    validate(mate)
+    drawn = _token(relay_race, mate)
+
+    with caplog.at_level(logging.INFO):
+        mate.send({"type": "relay_bound", "token": token})
+        assert _updates_until_barrier(mate) == 0
+
+    member = load_member(relay_race, mate.participant_id)
+    assert (member.relay_token, member.relay_bound) == (drawn, False)
+    # Dropped as malformed: never compared with the member's token.
+    seen = [r.getMessage() for r in caplog.records if "relay_bound" in r.getMessage()]
+    assert len(seen) == 1 and seen[0].startswith("Dropped malformed relay_bound"), seen
+
+
+def test_a_reconnecting_member_reads_its_token_and_binding_in_auth_ok(
+    integration_client, relay_race, mods
+):
+    pid = _pid(relay_race, 0, 1)
+    mate = mods[pid]
+    validate(mate)
+    token = _token(relay_race, mate)
+    mate.send({"type": "relay_bound", "token": token})
+    mate.receive_until("relay_update", _bound)
+    mate.disconnect()
+    mate.close()
+
+    mod_token = relay_race["teams"][0]["members"][1]["mod_token"]
+    back = mods[pid] = RelayModClient.connect(
+        integration_client, relay_race["race_id"], mod_token, pid
+    )
+    auth = back.auth(protocol_version="1.19")
+
+    assert auth["type"] == "auth_ok" and _own(auth) == (token, True)
 
 
 def test_a_second_relay_bound_is_not_answered(relay_race, mods):

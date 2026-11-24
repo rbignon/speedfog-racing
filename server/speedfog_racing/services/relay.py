@@ -332,11 +332,17 @@ def loot_entry(graph_json: Mapping[str, Any], flag: int) -> "RelayLootEntry | No
 
 
 def team_loot(
-    graph_json: Mapping[str, Any], zone_history: Sequence[Mapping[str, Any]] | None
+    boss_flags: Mapping[int, str],
+    graph_json: Mapping[str, Any],
+    zone_history: Sequence[Mapping[str, Any]] | None,
 ) -> "list[RelayLootEntry]":
     """The loot entry of every boss the team's history marks killed, in the
-    order of ``team_defeat_flags``; a boss without a usable entry gives none."""
-    entries = (loot_entry(graph_json, flag) for flag in team_defeat_flags(graph_json, zone_history))
+    order of ``team_defeat_flags``, among the bosses whose kill the server
+    counts (``boss_flags``, from ``extract_boss_flags``): the final boss, whose
+    kill is the finish and which has no entry, is left out. A boss without a
+    usable entry gives none."""
+    flags = (f for f in team_defeat_flags(graph_json, zone_history) if f in boss_flags)
+    entries = (loot_entry(graph_json, flag) for flag in flags)
     return [entry for entry in entries if entry is not None]
 
 

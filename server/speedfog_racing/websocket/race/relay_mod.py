@@ -666,9 +666,9 @@ class RelayModHandler(RaceModHandler):
     async def _on_boss_killed(  # type: ignore[override]
         self, entity: RelayTeam, node_id: str, igt_ms: int
     ) -> None:
-        """The counted kill sends its loot to the team (``send_kill_loot``), and
-        moves the team's row and its ``relay_update`` (``members[].zones``,
-        ``gates_locked``)."""
+        """The counted kill sends its loot to the team (``send_kill_loot``; a
+        failure there is logged), then moves the team's row and its
+        ``relay_update`` (``members[].zones``, ``gates_locked``)."""
         graph = self._get_graph_json(entity)
         await manager.broadcast_player_update(
             entity.race_id, self._row(entity, graph), graph_json=graph
@@ -677,13 +677,18 @@ class RelayModHandler(RaceModHandler):
         # session is closed.
         async with relay_section(entity.race_id):
             if graph is not None and self._participant_id is not None:
-                await send_kill_loot(
-                    manager.get_room(entity.race_id),
-                    entity.members,
-                    graph,
-                    node_id,
-                    self._participant_id,
-                )
+                try:
+                    await send_kill_loot(
+                        manager.get_room(entity.race_id),
+                        entity.members,
+                        graph,
+                        node_id,
+                        self._participant_id,
+                    )
+                except Exception:
+                    # The kill is already committed: a failed send must not
+                    # drop the socket nor keep the kill's update from the team.
+                    logger.exception("Relay kill loot failed: %s", self.log_ref)
             await send_relay_updates(
                 self.session_maker, entity.race_id, entity.id, graph_json=graph
             )

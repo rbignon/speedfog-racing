@@ -63,7 +63,7 @@ from speedfog_racing.services.relay import (
     team_defeat_flags,
     team_loot,
 )
-from speedfog_racing.websocket.handler import is_igt_plausible
+from speedfog_racing.websocket.handler import extract_boss_flags, is_igt_plausible
 from speedfog_racing.websocket.schemas import (
     CharacterState,
     RelayFlags,
@@ -284,15 +284,16 @@ async def send_kill_loot(
 
 
 async def send_team_loot(
-    room: "RaceRoom | None", team: RelayTeam, member: Participant, graph: Mapping[str, Any]
+    room: "RaceRoom | None", team: RelayTeam, member: Participant, graph: dict[str, Any]
 ) -> None:
     """Every loot entry of the team's dead bosses to ``member``'s mod, in one
     ``relay_loot`` (``paid`` false, no announce): the catch-up after a
     connection, its mod giving what its save has not received yet. Nothing to
-    a member who is out, nor before the team's first kill."""
-    if room is None or not is_active_member(member):
+    a member who is out, nor to a team that is over (finished or out: its run
+    is done), nor before the team's first kill."""
+    if room is None or team.status in TERMINAL_PARTICIPANT_STATUSES or not is_active_member(member):
         return
-    entries = team_loot(graph, team.zone_history)
+    entries = team_loot(extract_boss_flags(graph), graph, team.zone_history)
     if entries:
         message = RelayLootMessage(entries=entries, paid=False, announce=None)
         await room.send_to_mod(member.id, message.model_dump_json())
@@ -1034,10 +1035,10 @@ async def member_connection_changed(
     the first one may have died with the old socket, and until it is
     acknowledged nothing they send is heard. The team's mods are told either
     way (``online``, ``holder_online``). After that update, a member still in
-    the race who connects gets the loot of every boss the team killed
-    (``send_team_loot``). The disconnect of a socket a newer one replaced
-    changes nothing. The team row is locked before the member's row is
-    written, as in every relay write to both.
+    the race who connects, in a team still in it, gets the loot of every boss
+    the team killed (``send_team_loot``). The disconnect of a socket a newer
+    one replaced changes nothing. The team row is locked before the member's
+    row is written, as in every relay write to both.
     """
     async with room.relay_lock:
         if connected != (participant_id in room.mods):

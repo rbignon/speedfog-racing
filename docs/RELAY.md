@@ -283,9 +283,9 @@ then goes back to them.
   (`last_igt_change_at`, the 30 minute offline rule of "Lifecycle"). Any member's
   arrival or departure sends the team a `relay_update` (`online`, `holder_online`), and
   a receiver whose take is awaited gets it again first (above). A member still in the
-  race who connects then gets the team's loot ("Boss loot"). A returning ex-holder
-  authenticates as `waiting`. The disconnect of a socket that a newer one replaced
-  changes nothing.
+  race, in a team still in it, who connects then gets the team's loot ("Boss loot"). A
+  returning ex-holder authenticates as `waiting`. The disconnect of a socket that a
+  newer one replaced changes nothing.
 
 | Duration | Constant                  | Meaning                                                        |
 | -------- | ------------------------- | -------------------------------------------------------------- |
@@ -314,9 +314,11 @@ The team shares the loot of its bosses: what a boss of the run's graph gives (it
 and runes) reaches every member, each keeping their own character. The seed says what
 each boss gives (`relay.loot`, keyed by the defeat flag, "Seeds"): `loot_entry`
 (`services/relay.py`) reads one entry as a `RelayLootEntry`, and `team_loot` the entry
-of every boss the team's history marks killed, in the order of `team_defeat_flags`.
-They go out in `relay_loot` (`entries`, `paid`, `announce`; wire shapes in
-`PROTOCOL.md`):
+of every boss the team's history marks killed, in the order of `team_defeat_flags`,
+among the bosses whose kill the server counts (the defeat flags of
+`extract_boss_flags`): the final boss, whose kill the finish stamps on the team's
+history, is left out. They go out in `relay_loot` (`entries`, `paid`, `announce`; wire
+shapes in `PROTOCOL.md`):
 
 - **At a counted kill** (`send_kill_loot`, from `RelayModHandler._on_boss_killed`):
   the boss's entry to each connected member still in the race. The member who
@@ -327,15 +329,20 @@ They go out in `relay_loot` (`entries`, `paid`, `announce`; wire shapes in
   its `display_name`, the zone, else its id). A
   re-report or a replay of the flag is no new kill and sends nothing.
 - **After a connection** (`send_team_loot`, from `member_connection_changed`): a
-  member still in the race whose mod connects gets, after the `relay_update` of the
-  connection, one `relay_loot` with the entry of every boss the team killed,
-  `paid: false`, `announce: null`. A member who was offline at a kill, or who joins
-  the run late, catches up; one who was connected gets those entries again.
-- **Nothing** goes to a member who is out (abandoned or disqualified), to another
-  team, or before the team's first kill. The final boss has no entry: its kill is the
-  finish. A kill whose node has no usable entry (missing, or out of the wire bounds)
-  is counted and broadcast as any kill, sends no `relay_loot`, and logs a warning
-  (`loot_entry`); a catch-up leaves that boss out, with the same warning.
+  member still in the race, in a team still in it, whose mod connects gets, after the
+  `relay_update` of the connection, one `relay_loot` with the entry of every boss the
+  team killed, `paid: false`, `announce: null`. A member who was offline at a kill, or
+  who joins the run late, catches up; one who was connected gets those entries again.
+- **Nothing** goes to a member who is out (abandoned or disqualified), to a team that
+  is over (finished, abandoned or disqualified: its run is done, so a member of a
+  finished team who connects gets nothing either), to another team, or before the
+  team's first kill. The final boss has no entry: its kill is the finish, and no
+  `relay_loot` ever carries it. A kill whose node has no usable entry (missing, or out
+  of the wire bounds) is counted and broadcast as any kill, sends no `relay_loot`, and
+  logs a warning (`loot_entry`); a catch-up leaves that boss out, with the same
+  warning.
+- **A failed send** of a kill's loot is logged, and the kill's `relay_update` still
+  goes out: the kill is committed by then.
 
 The server stores nothing about who received what: each mod decides from its own save
 whether an entry is still to give (its `received_flag`), so an entry may reach a mod
