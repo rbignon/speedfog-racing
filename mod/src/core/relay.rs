@@ -1,11 +1,13 @@
-//! Relay races: the pure timing of a runner's lock and of its warps.
+//! Relay races: the pure timing of a runner's locks and of its warps.
 //!
-//! The seed carries a saved event flag, the lock: while it is on, the fog
-//! gates of the seed do not react and fast travel is refused. A second flag
-//! warps the player to the start zone (the Chapel) when raised, and each
-//! connection has a warp flag of its own that warps the player to that
-//! gate's exit; the seed lowers a warp flag itself after the warp. The race
-//! machine decides when each is written (`RaceMachine::maintain_relay`);
+//! The seed carries two saved event flags that hold a runner: the lock,
+//! while on, keeps the fog gates of the seed from reacting; the travel lock,
+//! while on, makes the Chapel and the Roundtable Hold refuse fast travel.
+//! Raised, a warp flag warps the player: one to the Roundtable Hold (where a
+//! waiting runner waits), one to the start zone (the Chapel), and one per
+//! connection to that gate's exit; the seed lowers a warp flag itself after
+//! the warp. The race machine decides when each is written
+//! (`RaceMachine::maintain_relay`);
 //! this module holds the constants, the records of a release, a capture and
 //! a take in progress, the retry timing of a warp flag, and how long the
 //! giver's "BATON PASSED" banner lasts. Pure: every method takes the wall
@@ -17,24 +19,26 @@ use crate::core::item_feed::ItemFeed;
 use crate::core::protocol::CharacterState;
 use crate::core::relay_view::WaitBanner;
 
-/// Map id of the Chapel, the start zone, as the position read gives it
-/// (area 10, block 1, no sub-block: `m10_01_00_00`).
-pub const CHAPEL_MAP_ID: u32 = 0x0A01_0000;
+/// Map id of the Roundtable Hold, where a waiting runner waits, as the
+/// position read gives it (area 11, block 10, no sub-block: `m11_10_00_00`).
+pub const ROUNDTABLE_MAP_ID: u32 = 0x0B0A_0000;
 /// Wall time the player stays loaded after a loading exit before a relay
 /// flag is written: a flag written during a loading screen can be missed by
 /// the seed's events.
 pub const SETTLE: Duration = Duration::from_millis(2500);
-/// After the lock is first raised, a runner away from the Chapel is left
-/// this long to finish what a gate transition was doing before it is sent
-/// back (a loading exit since the lock closes the window too).
+/// After the lock is first raised, a runner away from the Roundtable Hold is
+/// left this long to finish what a gate transition was doing before it is
+/// sent there (a loading exit since the lock closes the window too).
 pub const GATE_WINDOW: Duration = Duration::from_secs(5);
 /// A raised warp flag that started no load is lowered after this long.
 pub const WARP_RETRY: Duration = Duration::from_secs(5);
 /// Raises of the warp flag before the warp is given up.
 pub const WARP_ATTEMPTS: u32 = 3;
-/// Warps whose load ended away from the Chapel, in one locked stretch,
-/// before the return is given up for good (a loading exit does not reset
-/// the count: a wrong Chapel map id would otherwise loop forever).
+/// Warps whose load ended away from the Roundtable Hold, in one locked
+/// stretch, before the return is given up for good (a loading exit does not
+/// reset the count: a wrong Roundtable map id would otherwise loop forever).
+/// Only a load a warp started counts, so a runner who loaded elsewhere (a
+/// new character at the Chapel) keeps them all.
 pub const WARP_LANDINGS_MAX: u32 = 2;
 /// How long a `relay_release` is given to capture and answer, from its
 /// receipt. Under the server's `RELAY_RELEASE_TIMEOUT_S` (`RELEASE_WINDOW`),
@@ -64,8 +68,8 @@ pub const TAKEN_CONFIRM: Duration = Duration::from_secs(5);
 /// take started at once is still acknowledged in time.
 pub const APPLY_ABANDON: Duration = Duration::from_secs(20);
 /// Starts of one take at most: an apply a load cut (a death or a quit-out at
-/// the Chapel) puts its take back to `TakePhase::Received`, to be written
-/// again once loaded and settled at the Chapel; the apply that ends the last
+/// the Roundtable Hold) puts its take back to `TakePhase::Received`, to be
+/// written again once loaded and settled there; the apply that ends the last
 /// start is acknowledged however it ended, so a load at every start cannot
 /// hold a take for ever.
 pub const TAKE_STARTS_MAX: u32 = 3;
@@ -167,10 +171,10 @@ pub struct CaptureInFlight {
 }
 
 /// The giver's "BATON PASSED" banner, in place of the waiting banner: shown
-/// from the flip until the player is blocked (a load started, the Chapel
-/// reached, the return given up), and never shorter than a transient banner
-/// (`ItemFeed::BANNER_DURATION`), so a giver warped at once or already at
-/// the Chapel still reads it.
+/// from the flip until the player is blocked (a load started, the Roundtable
+/// Hold reached, the return given up), and never shorter than a transient
+/// banner (`ItemFeed::BANNER_DURATION`), so a giver warped at once or already
+/// at the Hold still reads it.
 #[derive(Debug)]
 pub struct PassedBanner {
     banner: WaitBanner,

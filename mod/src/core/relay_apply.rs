@@ -334,7 +334,7 @@ impl ApplyRun {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::relay::{APPLY_ABANDON, CHAPEL_MAP_ID};
+    use crate::core::relay::{APPLY_ABANDON, ROUNDTABLE_MAP_ID};
 
     const BOSS: u32 = 10_000_800;
 
@@ -398,9 +398,9 @@ mod tests {
         APPLY_FRAME_BUDGET
     }
 
-    /// A run of `n` grace writes asked at `t0` at the Chapel, planned.
+    /// A run of `n` grace writes asked at `t0` at the Roundtable Hold, planned.
     fn run_of(n: u32, t0: Instant) -> ApplyRun {
-        let mut run = ApplyRun::new("h1".to_string(), 7, Some(CHAPEL_MAP_ID), t0);
+        let mut run = ApplyRun::new("h1".to_string(), 7, Some(ROUNDTABLE_MAP_ID), t0);
         run.set_plan((0..n).map(|i| ApplyStep::Grace(71_000 + i)).collect());
         run
     }
@@ -496,7 +496,7 @@ mod tests {
     #[test]
     fn the_writes_follow_the_plan_and_count_their_failures() {
         let t0 = Instant::now();
-        let mut run = ApplyRun::new("h1".to_string(), 7, Some(CHAPEL_MAP_ID), t0);
+        let mut run = ApplyRun::new("h1".to_string(), 7, Some(ROUNDTABLE_MAP_ID), t0);
         let steps = vec![
             ApplyStep::Grace(71_190),
             ApplyStep::Grace(76_101),
@@ -615,7 +615,7 @@ mod tests {
     #[test]
     fn nothing_is_written_before_the_plan() {
         let t0 = Instant::now();
-        let mut run = ApplyRun::new("h1".to_string(), 7, Some(CHAPEL_MAP_ID), t0);
+        let mut run = ApplyRun::new("h1".to_string(), 7, Some(ROUNDTABLE_MAP_ID), t0);
         let mut writes = 0;
         for frame in 1..=3u64 {
             assert_eq!(
@@ -641,10 +641,10 @@ mod tests {
         let t0 = Instant::now();
         // During the writes: the map goes away, then comes back.
         let mut run = run_of(40, t0);
-        run.observe(Some(CHAPEL_MAP_ID));
+        run.observe(Some(ROUNDTABLE_MAP_ID));
         assert_eq!(run.write_frame(true, t0 + ms(16), quick, |_| true), None);
         run.observe(None);
-        run.observe(Some(CHAPEL_MAP_ID));
+        run.observe(Some(ROUNDTABLE_MAP_ID));
         assert_eq!(
             run.write_frame(true, t0 + ms(32), quick, |_| panic!("written after a load")),
             Some(ApplyEnd::MapChanged)
@@ -653,9 +653,9 @@ mod tests {
         assert_eq!(run.left(), 40 - APPLY_WRITES_PER_FRAME);
 
         // While the plan was read: nothing is ever written.
-        let mut run = ApplyRun::new("h1".to_string(), 7, Some(CHAPEL_MAP_ID), t0);
+        let mut run = ApplyRun::new("h1".to_string(), 7, Some(ROUNDTABLE_MAP_ID), t0);
         run.observe(Some(0x3C2C_2400));
-        run.observe(Some(CHAPEL_MAP_ID));
+        run.observe(Some(ROUNDTABLE_MAP_ID));
         run.set_plan(vec![ApplyStep::Grace(71_190)]);
         assert_eq!(
             run.write_frame(true, t0 + ms(16), quick, |_| panic!("written after a load")),

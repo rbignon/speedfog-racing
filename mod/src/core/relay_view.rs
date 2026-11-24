@@ -14,13 +14,13 @@ pub const MENU_TITLE: &str = "PASS THE BATON";
 /// server has not answered is in flight.
 pub const REQUEST_TEXT: &str = "Waiting for the server";
 /// Replaces the take prompt while the runner is not yet ready to take.
-pub const NOT_READY_TEXT: &str = "Not ready yet: wait at the Chapel.";
+pub const NOT_READY_TEXT: &str = "Not ready yet: wait at the Roundtable Hold.";
 /// Replaces every key hint while the baton key is unbound (`relay = "none"`
 /// in the config): the player is told what to do, no key is named.
 pub const UNBOUND_TEXT: &str = "No baton key bound: set `relay` in the config";
 /// The line under "BATON PASSED TO <RUNNER>" while the giver is on its way
-/// back to the Chapel.
-pub const RETURNING_TEXT: &str = "Returning to the Chapel of Anticipation...";
+/// to the Roundtable Hold.
+pub const RETURNING_TEXT: &str = "Returning to the Roundtable Hold...";
 /// One pulse of a pulsing line: full, down to `PULSE_MIN`, full again.
 pub const PULSE_PERIOD: Duration = Duration::from_millis(1200);
 /// The faintest a pulsing line gets: it never vanishes.
@@ -103,7 +103,8 @@ fn counter(member: &RelayMember, cap: u32) -> String {
 }
 
 /// The giver's banner from the flip until it is blocked (`PassedBanner`):
-/// the recipient's name in the title, the return to the Chapel below it.
+/// the recipient's name in the title, the return to the Roundtable Hold below
+/// it.
 pub fn passed_banner(to_name: &str) -> WaitBanner {
     WaitBanner {
         tone: BlockTone::Brass,

@@ -24,8 +24,8 @@ use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
     CameraVariant, CharacterState, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload,
     ItemReminder, ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods,
-    RaceStatus, RelayInfo, RelayLootAnnounce, RelayLootEntry, RelayMember, RelayRole, SeedInfo,
-    TalismanFlag,
+    RaceStatus, RelayFlags, RelayInfo, RelayLootAnnounce, RelayLootEntry, RelayMember, RelayRole,
+    SeedInfo, TalismanFlag,
 };
 use crate::core::relay::{
     self, ApplyInFlight, CaptureInFlight, FlagWarp, PassedBanner, PendingRelease, PendingTake,
@@ -175,8 +175,9 @@ pub enum MachineMessage {
     },
     /// The server gives this runner the baton: the state to apply (`None`
     /// when none is known yet), the team's IGT, the bosses the team killed,
-    /// and the gate whose exit it restarts from with that zone's name
-    /// (`None` before the team's first gate: it starts from the Chapel).
+    /// and the warp flag of the place it restarts from with that zone's
+    /// name: a gate's exit, or before the team's first gate the Chapel's
+    /// warp flag and no name.
     RelayTake {
         handoff_id: String,
         state: Option<CharacterState>,
@@ -341,8 +342,9 @@ pub struct TickInput {
 #[derive(Debug, PartialEq)]
 pub enum Effect {
     SendReady,
-    /// Tell the server whether this relay runner is loaded at the Chapel with
-    /// its lock raised (readiness does not survive the socket).
+    /// Tell the server whether this relay runner is loaded at the Roundtable
+    /// Hold with its lock and travel lock raised (readiness does not survive
+    /// the socket).
     SendRelayReady {
         ready: bool,
     },
@@ -707,19 +709,23 @@ pub struct RaceMachine {
     /// any write): the flag is saved, so the machine knows no more than the
     /// server's word and its own writes.
     relay_lock: Option<bool>,
+    /// What this process last wrote to the relay travel lock flag, with the
+    /// lock's discipline.
+    relay_travel_lock: Option<bool>,
     /// When `relay_lock` last turned on (the start of the locked stretch).
     relay_lock_since: Option<Instant>,
-    /// The lock was written (or found already right) since the last loading
-    /// exit: a load can bring back a save with another value.
+    /// The lock and the travel lock were written (or found already right)
+    /// since the last loading exit: a load can bring back a save with other
+    /// values. Both go out in the same batch, so one flag covers both.
     relay_asserted: bool,
-    /// The warp to the Chapel being made, if any.
+    /// The warp to the Roundtable Hold being made, if any.
     relay_warp: Option<FlagWarp>,
     /// A warp that failed is not made again until a loading exit.
     relay_warp_given_up: bool,
     /// Warps of the current locked stretch whose load ended away from the
-    /// Chapel; `relay::WARP_LANDINGS_MAX` of them end the return for good.
-    /// A loading exit does not reset it: the Chapel reached, or the lock
-    /// going down, does.
+    /// Roundtable Hold; `relay::WARP_LANDINGS_MAX` of them end the return
+    /// for good. A loading exit does not reset it: the Hold reached, or the
+    /// lock going down, does.
     relay_warp_landings: u32,
     /// A warp ended by a load: where the next loading exit lands is counted.
     relay_landing_due: bool,
@@ -776,7 +782,8 @@ pub struct RaceMachine {
     /// The held replays go on the next connected frame (which reads the
     /// flags for their rescan), and why.
     relay_replay_go: Option<&'static str>,
-    /// The warp to the exit of the gate a take restarts from.
+    /// The warp a take restarts from: to the exit of the team's last gate,
+    /// or to the Chapel before its first.
     relay_zone_warp: Option<FlagWarp>,
     /// When the current `RelayInfo` was received: the baton's countdown
     /// runs from it (`relay_free_in_s`).
@@ -972,6 +979,7 @@ impl RaceMachine {
             foes_walked_at: now,
             relay_member: None,
             relay_lock: None,
+            relay_travel_lock: None,
             relay_lock_since: None,
             relay_asserted: false,
             relay_warp: None,
@@ -1526,8 +1534,8 @@ impl RaceMachine {
 
     /// The waiting banner's last line: the view's, except that a take
     /// request in flight reads `REQUEST_TEXT` and a runner not yet ready to
-    /// take (not at the Chapel with the lock asserted) reads `NOT_READY_TEXT`
-    /// instead of a hold prompt that would do nothing.
+    /// take (not at the Roundtable Hold with both locks asserted) reads
+    /// `NOT_READY_TEXT` instead of a hold prompt that would do nothing.
     pub fn relay_wait_detail(&self) -> &str {
         self.relay_wait_prompt().0
     }
@@ -1611,8 +1619,8 @@ impl RaceMachine {
 
     /// A waiting runner may be offered the take: the relay is played past
     /// the countdown, the baton free now, no take in progress, no request
-    /// unanswered, and the runner itself loaded at the Chapel (its own last
-    /// `relay_ready`, not the echo), validated and under its cap.
+    /// unanswered, and the runner itself loaded at the Roundtable Hold (its
+    /// own last `relay_ready`, not the echo), validated and under its cap.
     pub fn relay_take_offered(&self, now: Instant) -> bool {
         self.relay_waiting_live()
             && self.relay_take.is_none()
@@ -1891,7 +1899,7 @@ impl RaceMachine {
     /// does not answer a `relay_taken` it ignores, so this is how the runner
     /// learns that the baton went elsewhere. What it already wrote stays (a
     /// later take writes the IGT again, a flag raised stays raised), an
-    /// apply still in flight answers for nothing, and the lock follows the
+    /// apply still in flight answers for nothing, and the locks follow the
     /// role again.
     fn relay_give_up_take(&mut self, reason: &'static str) {
         if let Some(take) = self.relay_take.take() {
@@ -4639,26 +4647,59 @@ impl RaceMachine {
         }
     }
 
+    /// What the relay travel lock should read: what the lock reads, except
+    /// for a holder with no take in progress, who may always fast travel (at
+    /// their cap the lock holds their gates, not their travels: they can
+    /// leave a dead end, shop and pass the baton from anywhere). `None`
+    /// wherever the lock is left alone.
+    fn relay_travel_lock_wanted(&self) -> Option<bool> {
+        let lock = self.relay_lock_wanted()?;
+        let holder = self.relay_take.is_none() && self.relay_role() == Some(RelayRole::Holder);
+        Some(lock && !holder)
+    }
+
+    /// Why a relay lock (the lock or the travel lock) turns to `want`, for
+    /// its log line.
+    fn relay_lock_reason(&self, want: bool) -> &'static str {
+        if want {
+            if self.relay_take.is_some() {
+                "take"
+            } else if self.relay_role() == Some(RelayRole::Waiting) {
+                "waiting"
+            } else {
+                "cap"
+            }
+        } else if self.relay_over() {
+            "relay over"
+        } else if !self.is_race_running() {
+            "race not running"
+        } else if self.relay_live() {
+            "holder"
+        } else {
+            "relay not started"
+        }
+    }
+
     /// The runner waits for the baton in a relay being played (a take in
     /// progress reads `Holder`: it is no longer waiting, and not ready).
     fn relay_waiting_live(&self) -> bool {
         self.relay_role() == Some(RelayRole::Waiting) && self.relay_live()
     }
 
-    /// The runner belongs at the Chapel, locked: it waits for the baton in a
-    /// relay being played, or a take it received waits for the frame that
-    /// writes it, not started yet or put back by a load that cut its apply
-    /// (a take is written at the Chapel only; while it is written, no return
-    /// there starts).
-    fn relay_chapel_bound(&self) -> bool {
+    /// The runner belongs at the Roundtable Hold, locked: it waits for the
+    /// baton in a relay being played, or a take it received waits for the
+    /// frame that writes it, not started yet or put back by a load that cut
+    /// its apply (a take is written at the Hold only; while it is written, no
+    /// return there starts).
+    fn relay_place_bound(&self) -> bool {
         match &self.relay_take {
             Some(take) => take.phase == TakePhase::Received && self.relay_live(),
             None => self.relay_waiting_live(),
         }
     }
 
-    /// A locked runner bound to the Chapel and away from it, with no warp
-    /// running or given up, past the gate window: the return to the Chapel
+    /// A locked runner bound to the Roundtable Hold and away from it, with no
+    /// warp running or given up, past the gate window: the return to the Hold
     /// may start (HP, which it needs, is the one thing left to check).
     fn relay_warp_may_start(&self, now: Instant) -> bool {
         self.relay_warp.is_none()
@@ -4666,20 +4707,20 @@ impl RaceMachine {
             && self.relay_warp_landings < relay::WARP_LANDINGS_MAX
             && self.relay_lock == Some(true)
             && self.relay_asserted
-            && self.relay_chapel_bound()
+            && self.relay_place_bound()
             && self
                 .frame_snapshot
                 .map_id
-                .is_some_and(|map| map != relay::CHAPEL_MAP_ID)
+                .is_some_and(|map| map != relay::ROUNDTABLE_MAP_ID)
             && self.relay_lock_since.is_some_and(|since| {
                 now.saturating_duration_since(since) >= relay::GATE_WINDOW
                     || self.last_loading_exit.is_some_and(|exit| exit > since)
             })
     }
 
-    /// HP is read only while the return to the Chapel may start, or while a
-    /// take waits for the frame that writes it or the one that acknowledges
-    /// it (not while the shell applies it).
+    /// HP is read only while the return to the Roundtable Hold may start, or
+    /// while a take waits for the frame that writes it or the one that
+    /// acknowledges it (not while the shell applies it).
     fn relay_wants_hp(&self, now: Instant) -> bool {
         self.relay_warp_may_start(now)
             || self
@@ -4688,9 +4729,9 @@ impl RaceMachine {
                 .is_some_and(|take| take.phase != TakePhase::Applying)
     }
 
-    /// Run a relay runner's lock, its return to the Chapel, a take and its
-    /// warp, and its readiness, after `maintain_hunter`. Decided on the
-    /// server's word and the machine's own writes; per frame a few
+    /// Run a relay runner's locks, its return to the Roundtable Hold, a take
+    /// and its warp, and its readiness, after `maintain_hunter`. Decided on
+    /// the server's word and the machine's own writes; per frame a few
     /// comparisons while nothing changes. Every flag write waits until the
     /// player is loaded and `relay::SETTLE` has passed since the last
     /// loading exit, on the race save: a flag written during a load can be
@@ -4721,7 +4762,7 @@ impl RaceMachine {
         }
         // An apply the shell never answered: the take goes on to its
         // acknowledgement with what got written (the IGT at least), so the
-        // runner is not held at the Chapel for ever.
+        // runner is not held at the Roundtable Hold for ever.
         if self.relay_apply.as_ref().is_some_and(|asked| {
             now.saturating_duration_since(asked.asked_at) >= relay::APPLY_ABANDON
         }) {
@@ -4739,28 +4780,29 @@ impl RaceMachine {
             }
         }
         let waiting_live = self.relay_waiting_live();
-        let chapel_bound = self.relay_chapel_bound();
+        let place_bound = self.relay_place_bound();
         let readable = self.frame_snapshot.position_readable;
         let map = self.frame_snapshot.map_id;
         if loading_exit {
             self.relay_asserted = false;
             self.relay_warp_given_up = false;
-            // Where the load a warp started ended.
+            // Where the load a warp started ended. Any other load (a new
+            // character's first, at the Chapel) counts nothing.
             if std::mem::take(&mut self.relay_landing_due) {
-                if let Some(landed) = map.filter(|&m| m != relay::CHAPEL_MAP_ID) {
+                if let Some(landed) = map.filter(|&m| m != relay::ROUNDTABLE_MAP_ID) {
                     self.relay_warp_landings += 1;
                     warn!(
                         map = %format_map_id(landed),
                         landings = self.relay_warp_landings,
-                        "[RELAY] Warp to the Chapel landed elsewhere"
+                        "[RELAY] Warp to the Roundtable landed elsewhere"
                     );
                     if self.relay_warp_landings >= relay::WARP_LANDINGS_MAX {
-                        self.set_status("Warp to the Chapel failed".to_string(), now);
+                        self.set_status("Warp to the Roundtable Hold failed".to_string(), now);
                     }
                 }
             }
         }
-        if map == Some(relay::CHAPEL_MAP_ID) {
+        if map == Some(relay::ROUNDTABLE_MAP_ID) {
             self.relay_warp_landings = 0;
         }
         let settled = self
@@ -4768,11 +4810,11 @@ impl RaceMachine {
             .is_none_or(|at| now.saturating_duration_since(at) >= relay::SETTLE);
         let can_write = readable && !self.wrong_save && settled;
 
-        // A warp to the Chapel ends when the runner no longer belongs there:
-        // a holder, a take started or an over relay does not go back. Its
-        // flag, still on, would warp the player the next time the seed
-        // reads it.
-        if !chapel_bound {
+        // A warp to the Roundtable Hold ends when the runner no longer
+        // belongs there: a holder, a take started or an over relay does not
+        // go back. Its flag, still on, would warp the player the next time
+        // the seed reads it.
+        if !place_bound {
             self.relay_warp_given_up = false;
             if let Some(mut warp) = self.relay_warp.take() {
                 if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), can_write) {
@@ -4801,30 +4843,14 @@ impl RaceMachine {
         }
 
         if can_write {
-            if let Some(want) = self.relay_lock_wanted() {
+            let lock = self.relay_lock_wanted();
+            if let Some(want) = lock {
                 if self.relay_lock != Some(want) {
-                    let reason = if want {
-                        if self.relay_take.is_some() {
-                            "take"
-                        } else if self.relay_role() == Some(RelayRole::Waiting) {
-                            "waiting"
-                        } else {
-                            "cap"
-                        }
-                    } else if self.relay_over() {
-                        "relay over"
-                    } else if !self.is_race_running() {
-                        "race not running"
-                    } else if self.relay_live() {
-                        "holder"
-                    } else {
-                        "relay not started"
-                    };
                     if !want {
                         self.relay_warp_landings = 0;
                     }
                     info!(
-                        reason,
+                        reason = self.relay_lock_reason(want),
                         "[RELAY] Lock {}",
                         if want { "raised" } else { "lowered" }
                     );
@@ -4837,6 +4863,27 @@ impl RaceMachine {
                     });
                     self.relay_lock = Some(want);
                 }
+            }
+            // The travel lock by the same rules, decided on its own, in the
+            // same batch: a frame that asserts the lock asserts it too.
+            let travel = self.relay_travel_lock_wanted();
+            if let Some(want) = travel {
+                if self.relay_travel_lock != Some(want) {
+                    info!(
+                        reason = self.relay_lock_reason(want),
+                        "[RELAY] Travel lock {}",
+                        if want { "raised" } else { "lowered" }
+                    );
+                }
+                if self.relay_travel_lock != Some(want) || !self.relay_asserted {
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flags.travel_lock_flag,
+                        value: want,
+                    });
+                    self.relay_travel_lock = Some(want);
+                }
+            }
+            if lock.is_some() || travel.is_some() {
                 self.relay_asserted = true;
             }
 
@@ -4856,18 +4903,18 @@ impl RaceMachine {
                 }
             }
 
-            // Back to the Chapel once the lock has held the gates long
+            // To the Roundtable Hold once the lock has held the gates long
             // enough (or a load has come since), unless dead.
             if self.relay_warp_may_start(now) && self.frame_snapshot.hp.is_some_and(|hp| hp > 0) {
-                self.relay_warp = Some(FlagWarp::new(flags.chapel_warp_flag));
+                self.relay_warp = Some(FlagWarp::new(flags.roundtable_warp_flag));
             }
         }
 
         if let Some(warp) = self.relay_warp.as_mut() {
             // Never a flag write on an unsettled frame; an unloaded one
-            // still ends the warp. Landed at the Chapel without a load
-            // frame seen: it is over, its flag lowered if still on.
-            let step = if map == Some(relay::CHAPEL_MAP_ID) {
+            // still ends the warp. Landed at the Roundtable Hold without a
+            // load frame seen: it is over, its flag lowered if still on.
+            let step = if map == Some(relay::ROUNDTABLE_MAP_ID) {
                 warp.abort().filter(|_| can_write)
             } else if !readable || can_write {
                 warp.tick(readable, now)
@@ -4875,12 +4922,12 @@ impl RaceMachine {
                 None
             };
             let (flag, done) = (warp.flag(), warp.is_done());
-            if done && step != Some(WarpStep::Failed) && map != Some(relay::CHAPEL_MAP_ID) {
+            if done && step != Some(WarpStep::Failed) && map != Some(relay::ROUNDTABLE_MAP_ID) {
                 self.relay_landing_due = true;
             }
             match step {
                 Some(WarpStep::Raise(flag)) => {
-                    info!("[RELAY] Warp to the Chapel");
+                    info!("[RELAY] Warp to the Roundtable");
                     effects.push(Effect::SetGameFlag {
                         flag_id: flag,
                         value: true,
@@ -4897,7 +4944,7 @@ impl RaceMachine {
                         value: false,
                     });
                     self.relay_warp_given_up = true;
-                    self.set_status("Warp to the Chapel failed".to_string(), now);
+                    self.set_status("Warp to the Roundtable Hold failed".to_string(), now);
                 }
                 None => {}
             }
@@ -4907,10 +4954,11 @@ impl RaceMachine {
         }
 
         // The giver's "BATON PASSED" banner lasts until the player is
-        // blocked (any load, the warp's or a death's; the Chapel; a return
-        // given up), its minimum done, and never past the runner's wait.
+        // blocked (any load, the warp's or a death's; the Roundtable Hold; a
+        // return given up), its minimum done, and never past the runner's
+        // wait.
         let blocked = !readable
-            || map == Some(relay::CHAPEL_MAP_ID)
+            || map == Some(relay::ROUNDTABLE_MAP_ID)
             || self.relay_warp_given_up
             || self.relay_warp_landings >= relay::WARP_LANDINGS_MAX;
         let still_waiting = self.relay_waiting_live();
@@ -4928,8 +4976,8 @@ impl RaceMachine {
         }
 
         if let Some(warp) = self.relay_zone_warp.as_mut() {
-            // As the warp to the Chapel: never a write on an unsettled
-            // frame, an unloaded one ends it. It counts no landing.
+            // As the warp to the Roundtable Hold: never a write on an
+            // unsettled frame, an unloaded one ends it. It counts no landing.
             let step = if !readable || can_write {
                 warp.tick(readable, now)
             } else {
@@ -4963,9 +5011,10 @@ impl RaceMachine {
             }
         }
 
-        // A take: written on a settled frame at the Chapel, locked, alive,
-        // connected, with nothing else asked of the shell; acknowledged on
-        // the first such frame (anywhere) once the shell has answered.
+        // A take: written on a settled frame at the Roundtable Hold, locked,
+        // alive, connected, with nothing else asked of the shell;
+        // acknowledged on the first such frame (anywhere) once the shell has
+        // answered.
         if let Some(phase) = self.relay_take.as_ref().map(|take| take.phase) {
             let alive = self.frame_snapshot.hp.is_some_and(|hp| hp > 0);
             match phase {
@@ -4973,7 +5022,7 @@ impl RaceMachine {
                     if can_write
                         && connected
                         && alive
-                        && map == Some(relay::CHAPEL_MAP_ID)
+                        && map == Some(relay::ROUNDTABLE_MAP_ID)
                         && self.relay_lock == Some(true)
                         && self.relay_asserted
                         && self.relay_capture.is_none()
@@ -4982,7 +5031,7 @@ impl RaceMachine {
                     self.relay_start_take(now, effects);
                 }
                 TakePhase::Applied if can_write && connected && alive => {
-                    self.relay_ack_take(flags.lock_flag, now, effects);
+                    self.relay_ack_take(flags, now, effects);
                 }
                 _ => {}
             }
@@ -5004,14 +5053,17 @@ impl RaceMachine {
             }
         }
 
+        // Ready: loaded at the Roundtable Hold, both locks raised and written
+        // since the last loading exit.
         if connected {
             let ready = waiting_live
                 && self.relay_lock == Some(true)
+                && self.relay_travel_lock == Some(true)
                 && self.relay_asserted
                 && readable
                 && !self.wrong_save
                 && self.relay_warp.is_none()
-                && self.frame_snapshot.map_id == Some(relay::CHAPEL_MAP_ID);
+                && self.frame_snapshot.map_id == Some(relay::ROUNDTABLE_MAP_ID);
             if self.relay_ready_sent != Some(ready) {
                 self.relay_ready_sent = Some(ready);
                 info!(ready, "[RELAY] Ready sent");
@@ -5022,10 +5074,10 @@ impl RaceMachine {
         self.maintain_relay_capture(connected, held, now, effects);
     }
 
-    /// The frame that writes a take, while the lock holds the runner at the
-    /// Chapel, in this order: the IGT (on every take, also without a state:
-    /// the runner's own IGT would fail the team's fresh-save gate or freeze
-    /// the team's IGT), then the apply (the state's graces, the defeat
+    /// The frame that writes a take, while the locks hold the runner at the
+    /// Roundtable Hold, in this order: the IGT (on every take, also without
+    /// a state: the runner's own IGT would fail the team's fresh-save gate or
+    /// freeze the team's IGT), then the apply (the state's graces, the defeat
     /// flags of the seed's bosses), which the shell plans on its worker
     /// thread and writes over the next frames. Nothing of the character is
     /// written: each runner keeps their own. The IGT guards are rebased on
@@ -5103,7 +5155,7 @@ impl RaceMachine {
     /// the window the references are rebased on the reading. A take whose
     /// last apply a load cut is acknowledged with the status "graces may be
     /// missing" (the IGT's status, when both apply, shows instead).
-    fn relay_ack_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
+    fn relay_ack_take(&mut self, flags: RelayFlags, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_ref() else {
             return;
         };
@@ -5147,45 +5199,58 @@ impl RaceMachine {
             self.freeze_last_igt = None;
             self.pending_quit_out = false;
         }
-        self.relay_complete_take(lock_flag, now, effects);
+        self.relay_complete_take(flags, now, effects);
     }
 
-    /// The frame after a take was applied: the lock lowered, then the warp
-    /// to the zone the take restarts raised (none before the team's first
-    /// gate: the runner starts from the Chapel), then `relay_taken`, with
-    /// the banner. The holder role the take gave then holds for
-    /// `relay::TAKEN_CONFIRM` whatever the cached info reads.
-    fn relay_complete_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
+    /// The frame after a take was applied: the lock and the travel lock
+    /// lowered, then the take's warp flag raised (the exit of the gate the
+    /// team restarts from, or the Chapel before its first gate), then
+    /// `relay_taken`, with the banner. The holder role the take gave then
+    /// holds for `relay::TAKEN_CONFIRM` whatever the cached info reads.
+    fn relay_complete_take(&mut self, flags: RelayFlags, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.take() else {
             return;
         };
         crate::profile_span!("relay_take_ack");
         info!(reason = "take", "[RELAY] Lock lowered");
+        info!(reason = "take", "[RELAY] Travel lock lowered");
         effects.push(Effect::SetGameFlag {
-            flag_id: lock_flag,
+            flag_id: flags.lock_flag,
+            value: false,
+        });
+        effects.push(Effect::SetGameFlag {
+            flag_id: flags.travel_lock_flag,
             value: false,
         });
         self.relay_lock = Some(false);
+        self.relay_travel_lock = Some(false);
         self.relay_asserted = true;
         self.relay_lock_since = None;
         self.relay_warp_landings = 0;
-        let line = match take.warp_flag {
-            Some(flag) => {
-                let mut warp = FlagWarp::new(flag);
-                if let Some(WarpStep::Raise(flag)) = warp.tick(true, now) {
-                    info!(flag, "[RELAY] Warp to the zone");
-                    effects.push(Effect::SetGameFlag {
-                        flag_id: flag,
-                        value: true,
-                    });
-                }
-                self.relay_zone_warp = Some(warp);
-                match &take.zone_name {
-                    Some(zone) => format!("You start at the entrance of {zone}"),
-                    None => "You start at the entrance of the team's zone".to_string(),
-                }
+        if let Some(flag) = take.warp_flag {
+            let mut warp = FlagWarp::new(flag);
+            if let Some(WarpStep::Raise(flag)) = warp.tick(true, now) {
+                info!(flag, "[RELAY] Warp to the zone");
+                effects.push(Effect::SetGameFlag {
+                    flag_id: flag,
+                    value: true,
+                });
             }
-            None => "You start from the Chapel".to_string(),
+            self.relay_zone_warp = Some(warp);
+        }
+        // The take before the team's first gate restarts from the Chapel: it
+        // carries the Chapel's warp flag (or, from a server that sends none
+        // there, no warp flag at all).
+        let line = if take
+            .warp_flag
+            .is_none_or(|flag| flag == flags.chapel_warp_flag)
+        {
+            "You start from the Chapel".to_string()
+        } else {
+            match &take.zone_name {
+                Some(zone) => format!("You start at the entrance of {zone}"),
+                None => "You start at the entrance of the team's zone".to_string(),
+            }
         };
         info!(
             handoff_id = %take.handoff_id,
@@ -5220,10 +5285,11 @@ impl RaceMachine {
     /// abandoned one included, is ignored. The answer clears the apply in
     /// flight: its take is then acknowledged on the next loaded, settled
     /// frame, unless a load ended the writes (`ApplyEnd::MapChanged`: a death
-    /// or a quit-out at the Chapel) before the take's `relay::TAKE_STARTS_MAX`
-    /// starts: the take is then put back to be started again on the next
-    /// loaded, settled frame at the Chapel (the IGT written again and a new
-    /// apply), the lock still raised and progress still held. The last
+    /// or a quit-out at the Roundtable Hold) before the take's
+    /// `relay::TAKE_STARTS_MAX` starts: the take is then put back to be
+    /// started again on the next loaded, settled frame at the Hold (the IGT
+    /// written again and a new apply), the locks still raised and progress
+    /// still held. The last
     /// start's apply is acknowledged however it ended, with the status
     /// "Baton taken: graces may be missing" after a load. A take replaced or
     /// given up since changes nothing (a newer take waiting for the shell
@@ -5256,7 +5322,7 @@ impl RaceMachine {
                         handoff_id,
                         elapsed_ms,
                         start = take.starts,
-                        "[RELAY] Apply cut by a load, the take starts again at the Chapel"
+                        "[RELAY] Apply cut by a load, the take starts again at the Roundtable"
                     );
                     return;
                 }
@@ -13515,12 +13581,16 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // Relay lock discipline, return to the Chapel, relay_ready
+    // Relay lock discipline, return to the Roundtable Hold, relay_ready
     // ------------------------------------------------------------------
 
     const LOCK: u32 = 1050290500;
     const CHAPEL_WARP: u32 = 1050290501;
+    const TRAVEL_LOCK: u32 = 1050290503;
+    const ROUNDTABLE_WARP: u32 = 1050290504;
     const IN_ZONE: u32 = 0x3C2C_2400;
+    /// The Chapel of Anticipation, where a new character loads.
+    const CHAPEL_MAP: u32 = 0x0A01_0000;
 
     fn lock(value: bool) -> Effect {
         Effect::SetGameFlag {
@@ -13529,9 +13599,16 @@ mod tests {
         }
     }
 
+    fn travel(value: bool) -> Effect {
+        Effect::SetGameFlag {
+            flag_id: TRAVEL_LOCK,
+            value,
+        }
+    }
+
     fn warp(value: bool) -> Effect {
         Effect::SetGameFlag {
-            flag_id: CHAPEL_WARP,
+            flag_id: ROUNDTABLE_WARP,
             value,
         }
     }
@@ -13628,8 +13705,8 @@ mod tests {
         crate::core::relay::SETTLE.as_millis() as u64
     }
 
-    fn chapel() -> Option<u32> {
-        Some(crate::core::relay::CHAPEL_MAP_ID)
+    fn roundtable() -> Option<u32> {
+        Some(crate::core::relay::ROUNDTABLE_MAP_ID)
     }
 
     fn update(m: &mut RaceMachine, info: RelayInfo, t0: Instant, at: u64) {
@@ -13658,6 +13735,123 @@ mod tests {
     }
 
     #[test]
+    fn a_waiting_runner_gets_both_locks_on_the_same_frame() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let exit = load_in(&mut m, t0, 100, IN_ZONE);
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 1_000,
+            Some(IN_ZONE),
+        );
+        let at_lock = fx.iter().find(|(_, e)| *e == lock(true)).unwrap().0;
+        let at_travel = fx.iter().find(|(_, e)| *e == travel(true)).unwrap().0;
+        assert_eq!(at_lock, at_travel);
+    }
+
+    #[test]
+    fn a_holder_at_their_cap_has_inert_gates_and_may_travel() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        let mut info = relay_info("holder");
+        info.gates_locked = true;
+        let exit = load_in(&mut m, t0, 100, IN_ZONE);
+        update(&mut m, info, t0, exit + 10);
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 1_000,
+            Some(IN_ZONE),
+        );
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+        assert!(times_of(&fx, &travel(true)).is_empty());
+    }
+
+    #[test]
+    fn a_runner_who_just_created_their_character_is_sent_from_the_chapel() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        // The new character's first load ends at the Chapel: no warp of the
+        // mod started it.
+        let exit = load_in(&mut m, t0, 100, CHAPEL_MAP);
+        let mut fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 100,
+            Some(CHAPEL_MAP),
+        );
+        let locked = times_of(&fx, &lock(true));
+        assert_eq!(locked.len(), 1, "{fx:?}");
+        assert_eq!(times_of(&fx, &travel(true)), locked);
+        let locked = locked[0];
+        let window = crate::core::relay::GATE_WINDOW.as_millis() as u64;
+        fx.extend(go_over(
+            &mut m,
+            t0,
+            exit + settle_ms() + 200,
+            locked + window - 100,
+            Some(CHAPEL_MAP),
+        ));
+        assert!(
+            times_of(&fx, &warp(true)).is_empty(),
+            "inside the gate window"
+        );
+        // That load is no landing: the return keeps all its attempts.
+        assert_eq!(m.relay_warp_landings, 0);
+        let raise = go(&mut m, t0, locked + window, Some(CHAPEL_MAP));
+        assert!(raise.contains(&warp(true)), "{raise:?}");
+        assert!(!raise
+            .iter()
+            .any(|e| matches!(e, Effect::SetGameFlag { flag_id, .. }
+            if *flag_id == CHAPEL_WARP)));
+        fx.extend(raise.into_iter().map(|e| (locked + window, e)));
+        // The warp's load ends at the Roundtable Hold: ready after its settle.
+        let exit = load_in(&mut m, t0, locked + window + 100, roundtable().unwrap());
+        assert_eq!(m.relay_warp_landings, 0);
+        assert!(times_of(&fx, &ready(true)).is_empty(), "{fx:?}");
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 500,
+            roundtable(),
+        );
+        let at = times_of(&fx, &ready(true));
+        assert_eq!(at.len(), 1);
+        assert!(at[0] >= exit + settle_ms(), "{at:?}");
+    }
+
+    #[test]
+    fn readiness_is_the_roundtable_with_both_locks_asserted() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        // Locked at the Chapel, inside the gate window: not ready there.
+        let fx = go_over(&mut m, t0, 0, 2_000, Some(CHAPEL_MAP));
+        assert_eq!(times_of(&fx, &lock(true)), [0]);
+        assert_eq!(times_of(&fx, &travel(true)), [0]);
+        assert!(times_of(&fx, &ready(true)).is_empty(), "{fx:?}");
+        // A load ends at the Roundtable Hold: ready on the frame that writes
+        // both locks again, after the settle.
+        let exit = load_in(&mut m, t0, 2_100, roundtable().unwrap());
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 500,
+            roundtable(),
+        );
+        let at = times_of(&fx, &ready(true));
+        assert_eq!(at.len(), 1, "{fx:?}");
+        assert!(at[0] >= exit + settle_ms());
+        assert_eq!(times_of(&fx, &lock(true)), at);
+        assert_eq!(times_of(&fx, &travel(true)), at);
+    }
+
+    #[test]
     fn the_lock_is_never_written_during_a_load() {
         let t0 = Instant::now();
         let mut m = relay_machine("holder", t0);
@@ -13671,25 +13865,47 @@ mod tests {
             );
         }
         let exit = 1_200;
-        go_exit(&mut m, t0, exit, chapel());
-        let fx = go_over(&mut m, t0, exit + 100, exit + settle_ms() + 200, chapel());
+        go_exit(&mut m, t0, exit, roundtable());
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 200,
+            roundtable(),
+        );
         let at = times_of(&fx, &lock(true));
         assert_eq!(at.len(), 1);
         assert!(at[0] >= exit + settle_ms());
     }
 
     #[test]
-    fn the_lock_is_asserted_again_after_each_loading_exit() {
+    fn both_locks_are_written_again_after_a_loading_exit() {
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
-        let e1 = load_in(&mut m, t0, 100, chapel().unwrap());
-        let fx = go_over(&mut m, t0, e1 + 100, e1 + 3_000, chapel());
+        let e1 = load_in(&mut m, t0, 100, roundtable().unwrap());
+        let fx = go_over(&mut m, t0, e1 + 100, e1 + 3_000, roundtable());
         assert_eq!(times_of(&fx, &lock(true)).len(), 1);
-        let e2 = load_in(&mut m, t0, 4_000, chapel().unwrap());
-        let fx = go_over(&mut m, t0, e2 + 100, e2 + 3_000, chapel());
+        assert_eq!(times_of(&fx, &travel(true)), times_of(&fx, &lock(true)));
+        let e2 = load_in(&mut m, t0, 4_000, roundtable().unwrap());
+        let fx = go_over(&mut m, t0, e2 + 100, e2 + 3_000, roundtable());
         let at = times_of(&fx, &lock(true));
         assert_eq!(at.len(), 1);
         assert!(at[0] >= e2 + settle_ms());
+        assert_eq!(times_of(&fx, &travel(true)), at);
+        // A holder at their cap: the lock raised and the travel lock lowered,
+        // both again after each load (here a fast travel out of the Hold).
+        let mut capped = relay_info("holder");
+        capped.gates_locked = true;
+        update(&mut m, capped, t0, 7_200);
+        let fx = go_over(&mut m, t0, 7_300, 7_500, roundtable());
+        assert_eq!(times_of(&fx, &travel(false)), [7_300]);
+        assert!(times_of(&fx, &lock(true)).is_empty(), "already raised");
+        let e3 = load_in(&mut m, t0, 7_600, IN_ZONE);
+        let fx = go_over(&mut m, t0, e3 + 100, e3 + 3_000, Some(IN_ZONE));
+        let at = times_of(&fx, &lock(true));
+        assert_eq!(at.len(), 1);
+        assert!(at[0] >= e3 + settle_ms());
+        assert_eq!(times_of(&fx, &travel(false)), at);
     }
 
     #[test]
@@ -13708,7 +13924,7 @@ mod tests {
         // server says, once, whatever the save holds.
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
-        let fx = go_over(&mut m, t0, 0, 2_000, chapel());
+        let fx = go_over(&mut m, t0, 0, 2_000, roundtable());
         assert_eq!(times_of(&fx, &lock(true)), [0]);
     }
 
@@ -13741,12 +13957,12 @@ mod tests {
             let t0 = Instant::now();
             let mut m = RaceMachine::new(1, String::new(), false, t0);
             m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
-            let fx = go_over(&mut m, t0, 0, 1_000, chapel());
+            let fx = go_over(&mut m, t0, 0, 1_000, roundtable());
             assert!(!fx
                 .iter()
                 .any(|(_, e)| *e == lock(true) || *e == ready(true)));
             m.handle_message(MachineMessage::RaceStart(10), t0 + ms(1_000));
-            let fx = go_over(&mut m, t0, 1_100, 4_000, chapel());
+            let fx = go_over(&mut m, t0, 1_100, 4_000, roundtable());
             assert!(
                 !fx.iter()
                     .any(|(_, e)| *e == lock(true) || *e == ready(true)),
@@ -13754,7 +13970,7 @@ mod tests {
             );
             let start = relay_info_with(role, "ready");
             update(&mut m, start, t0, 4_050);
-            let fx = go_over(&mut m, t0, 4_100, 6_000, chapel());
+            let fx = go_over(&mut m, t0, 4_100, 6_000, roundtable());
             assert_eq!(
                 times_of(&fx, &lock(true)).len(),
                 usize::from(locks),
@@ -13778,15 +13994,21 @@ mod tests {
         let t0 = Instant::now();
         let mut m = RaceMachine::new(1, String::new(), false, t0);
         m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
-        go(&mut m, t0, 0, chapel());
+        go(&mut m, t0, 0, roundtable());
         m.handle_message(MachineMessage::RaceStart(10), t0 + ms(100));
         go(&mut m, t0, 200, None);
         update(&mut m, relay_info_with("waiting", "ready"), t0, 300);
         let fx = go_over(&mut m, t0, 300, 1_900, None);
         assert!(fx.is_empty(), "{fx:?}");
         let exit = 2_000;
-        go_exit(&mut m, t0, exit, chapel());
-        let fx = go_over(&mut m, t0, exit + 100, exit + settle_ms() + 200, chapel());
+        go_exit(&mut m, t0, exit, roundtable());
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 200,
+            roundtable(),
+        );
         assert_eq!(times_of(&fx, &lock(true)).len(), 1);
         assert!(times_of(&fx, &lock(true))[0] >= exit + settle_ms());
     }
@@ -13810,10 +14032,10 @@ mod tests {
         assert_eq!(m.relay_locked(), Some(false));
     }
 
-    /// A machine locked and ready at the Chapel, the window long over.
-    fn locked_at_chapel(t0: Instant) -> RaceMachine {
+    /// A machine locked and ready at the Roundtable Hold, the window long over.
+    fn locked_at_roundtable(t0: Instant) -> RaceMachine {
         let mut m = relay_machine("waiting", t0);
-        let fx = go_over(&mut m, t0, 0, 300, chapel());
+        let fx = go_over(&mut m, t0, 0, 300, roundtable());
         assert!(fx.iter().any(|(_, e)| *e == lock(true)));
         assert!(fx.iter().any(|(_, e)| *e == ready(true)));
         m
@@ -13882,16 +14104,16 @@ mod tests {
         for (name, event) in cases {
             for warping in [false, true] {
                 let t0 = Instant::now();
-                let mut m = locked_at_chapel(t0);
+                let mut m = locked_at_roundtable(t0);
                 if warping {
-                    // Away from the Chapel, past the window: a warp raised.
+                    // Away from the Roundtable Hold, past the window: a warp raised.
                     let fx = go_over(&mut m, t0, 400, 6_000, Some(IN_ZONE));
                     assert_eq!(times_of(&fx, &warp(true)).len(), 1, "{name}");
                 }
                 event(&mut m, t0);
-                // At the Chapel, ready until the end tells it otherwise; away
+                // At the Roundtable Hold, ready until the end tells it otherwise; away
                 // from it, with a warp on its way, already not ready.
-                let map = if warping { Some(IN_ZONE) } else { chapel() };
+                let map = if warping { Some(IN_ZONE) } else { roundtable() };
                 let fx = go_over(&mut m, t0, 6_100, 12_000, map);
                 assert_eq!(times_of(&fx, &lock(false)), [6_100], "{name} {warping}");
                 assert!(!fx.iter().any(|(_, e)| *e == warp(true)), "{name}");
@@ -13908,7 +14130,7 @@ mod tests {
     #[test]
     fn a_warp_flag_still_raised_is_lowered_when_the_relay_ends() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         let fx = go_over(&mut m, t0, 400, 5_600, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &warp(true)).len(), 1);
         update(&mut m, relay_info("holder"), t0, 5_650);
@@ -13920,15 +14142,22 @@ mod tests {
     }
 
     #[test]
-    fn a_waiting_runner_away_from_the_chapel_is_sent_back_after_the_gate_window() {
+    fn a_waiting_runner_away_from_the_roundtable_is_sent_there() {
         let t0 = Instant::now();
         let mut m = relay_machine("holder", t0);
         go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
         update(&mut m, relay_info("waiting"), t0, 400);
         let fx = go_over(&mut m, t0, 400, 9_000, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &lock(true)), [400]);
+        assert_eq!(times_of(&fx, &travel(true)), [400]);
+        // After the gate window, through the Roundtable's warp, never the
+        // Chapel's.
         assert_eq!(times_of(&fx, &warp(true)), [5_400]);
-        // Away from the Chapel it is never ready.
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::SetGameFlag { flag_id, .. }
+            if *flag_id == CHAPEL_WARP)));
+        // Away from the Roundtable Hold it is never ready.
         assert!(times_of(&fx, &ready(true)).is_empty());
     }
 
@@ -13975,7 +14204,7 @@ mod tests {
     }
 
     #[test]
-    fn hp_is_asked_only_while_the_return_to_the_chapel_may_start() {
+    fn hp_is_asked_only_while_the_return_to_the_roundtable_may_start() {
         let t0 = Instant::now();
         let hp = |m: &RaceMachine, at: u64| m.pre_tick(t0 + ms(at), true, true).hp;
         let mut m = relay_machine("holder", t0);
@@ -13987,20 +14216,23 @@ mod tests {
         assert!(hp(&m, 5_400), "the warp may start");
         go(&mut m, t0, 5_400, Some(IN_ZONE));
         assert!(!hp(&m, 5_500), "a warp running does not use it");
-        // Given up after two landings away from the Chapel.
+        // Given up after two landings away from the Roundtable Hold.
         let exit = load_in(&mut m, t0, 5_500, IN_ZONE);
         let at = run_until_warp(&mut m, t0, exit + 100) + 100;
         let exit = load_in(&mut m, t0, at, IN_ZONE);
         go_over(&mut m, t0, exit + 100, exit + 6_000, Some(IN_ZONE));
         assert!(!hp(&m, exit + 6_100), "given up for good");
-        let m = locked_at_chapel(Instant::now());
-        assert!(!m.pre_tick(Instant::now(), true, true).hp, "at the Chapel");
+        let m = locked_at_roundtable(Instant::now());
+        assert!(
+            !m.pre_tick(Instant::now(), true, true).hp,
+            "at the Roundtable Hold"
+        );
     }
 
     #[test]
     fn a_warp_that_never_loads_gives_up_with_a_status() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         let fx = go_over(&mut m, t0, 400, 30_000, Some(IN_ZONE));
         let raises = times_of(&fx, &warp(true));
         assert_eq!(raises.len(), 3);
@@ -14011,19 +14243,19 @@ mod tests {
         assert_eq!(lowers, [raises[0] + 5_000, raises[1] + 5_000, failed]);
         assert_eq!(
             m.get_status(t0 + ms(failed)),
-            Some("Warp to the Chapel failed")
+            Some("Warp to the Roundtable Hold failed")
         );
     }
 
     #[test]
-    fn the_return_to_the_chapel_end_to_end() {
+    fn the_return_to_the_roundtable_end_to_end() {
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
         let fx = go_over(&mut m, t0, 0, 6_000, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &warp(true)), [5_000]);
-        // The seed warps: a load, ending at the Chapel.
-        let exit = load_in(&mut m, t0, 5_100, crate::core::relay::CHAPEL_MAP_ID);
-        let fx = go_over(&mut m, t0, exit + 100, exit + 8_000, chapel());
+        // The seed warps: a load, ending at the Roundtable Hold.
+        let exit = load_in(&mut m, t0, 5_100, crate::core::relay::ROUNDTABLE_MAP_ID);
+        let fx = go_over(&mut m, t0, exit + 100, exit + 8_000, roundtable());
         assert!(times_of(&fx, &warp(true)).is_empty(), "no second raise");
         assert_eq!(times_of(&fx, &lock(true)).len(), 1);
         let ready_at = times_of(&fx, &ready(true));
@@ -14034,30 +14266,30 @@ mod tests {
     #[test]
     fn no_relay_flag_is_written_on_the_exit_frame() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         go(&mut m, t0, 500, None);
         // The server's word changes during the load.
         update(&mut m, relay_info("holder"), t0, 550);
-        go_exit(&mut m, t0, 600, chapel());
-        let fx = go_over(&mut m, t0, 700, 600 + settle_ms() + 100, chapel());
+        go_exit(&mut m, t0, 600, roundtable());
+        let fx = go_over(&mut m, t0, 700, 600 + settle_ms() + 100, roundtable());
         assert_eq!(times_of(&fx, &lock(false)).len(), 1);
         assert!(times_of(&fx, &lock(false))[0] >= 600 + settle_ms());
     }
 
     #[test]
-    fn a_waiting_runner_turning_holder_at_the_chapel_is_no_longer_ready() {
+    fn a_waiting_runner_turning_holder_at_the_roundtable_is_no_longer_ready() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         update(&mut m, relay_info("holder"), t0, 400);
-        let fx = go(&mut m, t0, 500, chapel());
+        let fx = go(&mut m, t0, 500, roundtable());
         assert!(fx.contains(&ready(false)), "{fx:?}");
         assert!(fx.contains(&lock(false)));
     }
 
     #[test]
-    fn two_landings_away_from_the_chapel_end_the_return_for_good() {
+    fn two_landings_away_from_the_roundtable_end_the_return_for_good() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         let mut at = 400;
         let mut exit = 0;
         for _ in 0..2 {
@@ -14067,7 +14299,7 @@ mod tests {
         }
         assert_eq!(
             m.get_status(t0 + ms(exit)),
-            Some("Warp to the Chapel failed")
+            Some("Warp to the Roundtable Hold failed")
         );
         // No third raise, however many loads come.
         for _ in 0..3 {
@@ -14081,15 +14313,20 @@ mod tests {
     }
 
     #[test]
-    fn reaching_the_chapel_resets_the_landing_count() {
+    fn reaching_the_roundtable_resets_the_landing_count() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         let raise = run_until_warp(&mut m, t0, 400);
         let exit = load_in(&mut m, t0, raise + 100, IN_ZONE);
         go_over(&mut m, t0, exit + 100, exit + 100, Some(IN_ZONE));
         assert_eq!(m.relay_warp_landings, 1);
-        let exit = load_in(&mut m, t0, exit + 200, crate::core::relay::CHAPEL_MAP_ID);
-        go(&mut m, t0, exit + 100, chapel());
+        let exit = load_in(
+            &mut m,
+            t0,
+            exit + 200,
+            crate::core::relay::ROUNDTABLE_MAP_ID,
+        );
+        go(&mut m, t0, exit + 100, roundtable());
         assert_eq!(m.relay_warp_landings, 0);
         // Two more landings are needed again before giving up.
         let mut at = exit + 200;
@@ -14106,7 +14343,7 @@ mod tests {
     #[test]
     fn the_lock_going_down_resets_the_landing_count() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         let mut at = 400;
         for _ in 0..2 {
             let raise = run_until_warp(&mut m, t0, at);
@@ -14145,14 +14382,14 @@ mod tests {
     }
 
     #[test]
-    fn a_warp_that_lands_at_the_chapel_without_a_load_frame_ends() {
+    fn a_warp_that_lands_at_the_roundtable_without_a_load_frame_ends() {
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
         let fx = go_over(&mut m, t0, 0, 5_000, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &warp(true)), [5_000]);
-        let fx = go(&mut m, t0, 5_100, chapel());
+        let fx = go(&mut m, t0, 5_100, roundtable());
         assert!(fx.contains(&warp(false)), "{fx:?}");
-        let fx = go_over(&mut m, t0, 5_200, 15_000, chapel());
+        let fx = go_over(&mut m, t0, 5_200, 15_000, roundtable());
         assert!(times_of(&fx, &warp(true)).is_empty());
         assert_eq!(m.relay_warp_landings, 0);
     }
@@ -14181,10 +14418,10 @@ mod tests {
     }
 
     #[test]
-    fn relay_ready_follows_the_chapel_and_the_lock() {
+    fn relay_ready_follows_the_roundtable_and_the_lock() {
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
-        let fx = go_over(&mut m, t0, 0, 500, chapel());
+        let fx = go_over(&mut m, t0, 0, 500, roundtable());
         assert_eq!(times_of(&fx, &ready(true)), [0]);
         // A loading screen: not loaded, not ready.
         let fx = go(&mut m, t0, 600, None);
@@ -14192,12 +14429,12 @@ mod tests {
         assert!(go(&mut m, t0, 700, None).is_empty());
         // Back: ready once the lock is asserted again.
         let exit = 800;
-        go_exit(&mut m, t0, exit, chapel());
-        let fx = go_over(&mut m, t0, exit + 100, exit + 3_000, chapel());
+        go_exit(&mut m, t0, exit, roundtable());
+        let fx = go_over(&mut m, t0, exit + 100, exit + 3_000, roundtable());
         let at = times_of(&fx, &ready(true));
         assert_eq!(at.len(), 1);
         assert!(at[0] >= exit + settle_ms());
-        // Reconnection while at the Chapel: the current value again, once.
+        // Reconnection while at the Roundtable Hold: the current value again, once.
         m.handle_message(
             relay_auth("running", Some(relay_info("waiting"))),
             t0 + secs(5),
@@ -14206,12 +14443,12 @@ mod tests {
             MachineMessage::StatusChanged(ConnectionStatus::Connected),
             t0 + secs(5),
         );
-        let fx = go_over(&mut m, t0, 5_100, 5_500, chapel());
+        let fx = go_over(&mut m, t0, 5_100, 5_500, roundtable());
         assert_eq!(times_of(&fx, &ready(true)), [5_100]);
         assert!(!fx
             .iter()
             .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })));
-        // Away from the Chapel: false, and false again after a reconnection.
+        // Away from the Roundtable Hold: false, and false again after a reconnection.
         let fx = go_over(&mut m, t0, 5_600, 5_800, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &ready(false)), [5_600]);
         m.handle_message(
@@ -14231,7 +14468,7 @@ mod tests {
     fn a_holder_never_sends_ready_true() {
         let t0 = Instant::now();
         let mut m = relay_machine("holder", t0);
-        let fx = go_over(&mut m, t0, 0, 5_000, chapel());
+        let fx = go_over(&mut m, t0, 0, 5_000, roundtable());
         assert!(times_of(&fx, &ready(true)).is_empty());
         assert_eq!(times_of(&fx, &ready(false)), [0]);
     }
@@ -14239,7 +14476,7 @@ mod tests {
     #[test]
     fn a_socket_reconnect_while_locked_keeps_the_lock() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         // The auth_ok info reads the runner not ready; the update follows.
         let mut info = relay_info("waiting");
         info.members[0].ready = false;
@@ -14249,7 +14486,7 @@ mod tests {
             t0 + secs(2),
         );
         update(&mut m, relay_info("waiting"), t0, 2_050);
-        let fx = go_over(&mut m, t0, 2_100, 3_000, chapel());
+        let fx = go_over(&mut m, t0, 2_100, 3_000, roundtable());
         assert!(
             !fx.iter()
                 .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })),
@@ -14265,7 +14502,7 @@ mod tests {
             for what in ["role", "team"] {
                 let t0 = Instant::now();
                 let mut m = relay_machine(if locked { "waiting" } else { "holder" }, t0);
-                go_over(&mut m, t0, 0, 400, chapel());
+                go_over(&mut m, t0, 0, 400, roundtable());
                 let before = m.relay_locked();
                 let mut info = relay_info(if locked { "waiting" } else { "holder" });
                 if what == "role" {
@@ -14274,13 +14511,13 @@ mod tests {
                     info.team_status = ParticipantStatus::Unknown;
                 }
                 update(&mut m, info, t0, 450);
-                // Past the window, away from the Chapel, after a load.
+                // Past the window, away from the Roundtable Hold, after a load.
                 let exit = load_in(&mut m, t0, 500, IN_ZONE);
                 let fx = go_over(&mut m, t0, exit + 100, exit + 9_000, Some(IN_ZONE));
                 assert!(
                     !fx.iter()
                         .any(|(_, e)| matches!(e, Effect::SetGameFlag { flag_id, .. }
-                        if *flag_id == CHAPEL_WARP)),
+                        if *flag_id == ROUNDTABLE_WARP)),
                     "{what} {locked}"
                 );
                 assert!(
@@ -14299,11 +14536,11 @@ mod tests {
     #[test]
     fn an_unknown_role_does_not_outweigh_a_finished_team() {
         let t0 = Instant::now();
-        let mut m = locked_at_chapel(t0);
+        let mut m = locked_at_roundtable(t0);
         let mut info = relay_info_with("waiting", "finished");
         info.role = RelayRole::Unknown;
         update(&mut m, info, t0, 400);
-        let fx = go_over(&mut m, t0, 500, 800, chapel());
+        let fx = go_over(&mut m, t0, 500, 800, roundtable());
         assert_eq!(times_of(&fx, &lock(false)), [500]);
     }
 
@@ -14539,11 +14776,11 @@ mod tests {
     }
 
     #[test]
-    fn the_passed_banner_lasts_four_seconds_at_the_chapel() {
-        let (mut m, t0) = passed_at(chapel(), 200);
-        go_over(&mut m, t0, 300, 4_100, chapel());
+    fn the_passed_banner_lasts_four_seconds_at_the_roundtable() {
+        let (mut m, t0) = passed_at(roundtable(), 200);
+        go_over(&mut m, t0, 300, 4_100, roundtable());
         assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
-        go(&mut m, t0, 4_200, chapel());
+        go(&mut m, t0, 4_200, roundtable());
         assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
     }
 
@@ -14555,13 +14792,23 @@ mod tests {
         let mut capped = relay_info("holder");
         capped.gates_locked = true;
         update(&mut m, capped, t0, 100);
-        go_over(&mut m, t0, 200, 8_000, Some(IN_ZONE));
+        let fx = go_over(&mut m, t0, 200, 8_000, Some(IN_ZONE));
+        assert!(
+            times_of(&fx, &travel(true)).is_empty(),
+            "capped: may travel"
+        );
         release(&mut m, t0, 8_050, "h1");
         let fx = go(&mut m, t0, 8_100, Some(IN_ZONE));
         assert_eq!(captures(&fx), [Some("h1".to_string())]);
         answer(&mut m, t0, 8_150, Some("h1"), Some(char_state()));
         update(&mut m, relay_info("waiting"), t0, 8_200);
+        // Waiting: the travel lock raised (the lock already is), and the
+        // warp to the Roundtable Hold at once, its gate window long over.
         let fx = go(&mut m, t0, 8_300, Some(IN_ZONE));
+        assert!(
+            fx.contains(&travel(true)) && !fx.contains(&lock(true)),
+            "{fx:?}"
+        );
         assert!(fx.contains(&warp(true)), "warped at once: {fx:?}");
         go_over(&mut m, t0, 8_400, 12_100, None);
         assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
@@ -14609,10 +14856,10 @@ mod tests {
 
     #[test]
     fn the_returning_line_pulses_only_while_the_passed_banner_shows() {
-        let (mut m, t0) = passed_at(chapel(), 200);
+        let (mut m, t0) = passed_at(roundtable(), 200);
         let half = |at: u64| t0 + ms(at) + PULSE_PERIOD / 2;
         assert!(m.relay_wait_line_alpha(half(200)) < 0.5);
-        go_over(&mut m, t0, 300, 4_200, chapel());
+        go_over(&mut m, t0, 300, 4_200, roundtable());
         assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
         assert_eq!(m.relay_wait_line_alpha(half(4_200)), 1.0);
     }
@@ -15207,15 +15454,16 @@ mod tests {
         out
     }
 
-    /// A waiting runner locked and ready at the Chapel, on its own save.
+    /// A waiting runner locked and ready at the Roundtable Hold, on its own
+    /// save.
     fn receiver(t0: Instant) -> RaceMachine {
         let mut m = relay_machine("waiting", t0);
         let mut fx = Vec::new();
         for at in (0..=900).step_by(100) {
-            fx.extend(local(&mut m, t0, at, chapel()));
+            fx.extend(local(&mut m, t0, at, roundtable()));
         }
         assert!(
-            fx.contains(&lock(true)) && fx.contains(&ready(true)),
+            fx.contains(&lock(true)) && fx.contains(&travel(true)) && fx.contains(&ready(true)),
             "{fx:?}"
         );
         m
@@ -15282,13 +15530,14 @@ mod tests {
         ]
     }
 
-    /// A take acknowledged at the Chapel at 1_200, its warp flag raised.
+    /// A take acknowledged at the Roundtable Hold at 1_200, its warp flag
+    /// raised.
     fn acknowledged(t0: Instant) -> RaceMachine {
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         applied(&mut m, t0, 1_150, "h1");
-        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
+        let fx = team(&mut m, t0, 1_200, roundtable(), 1_100);
         assert!(fx.contains(&taken("h1")), "{fx:?}");
         m
     }
@@ -15301,24 +15550,24 @@ mod tests {
         assert_eq!(fx, [ready(false)], "no longer ready from the receipt");
         assert!(m.relay_take_pending() && m.progress_held());
         assert_eq!(m.relay_role(), Some(RelayRole::Holder));
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         assert_eq!(
             apply_fx(&fx),
             full_apply("h1", 1).iter().collect::<Vec<_>>()
         );
         assert!(flag_fx(&fx).is_empty(), "{fx:?}");
         for at in (1_200..=4_100).step_by(100) {
-            let fx = team(&mut m, t0, at, chapel(), 1_100);
+            let fx = team(&mut m, t0, at, roundtable(), 1_100);
             assert!(
                 apply_fx(&fx).is_empty() && flag_fx(&fx).is_empty(),
                 "{at}: {fx:?}"
             );
         }
         applied(&mut m, t0, 4_150, "h1");
-        let fx = team(&mut m, t0, 4_200, chapel(), 1_100);
+        let fx = team(&mut m, t0, 4_200, roundtable(), 1_100);
         assert_eq!(
             flag_fx(&fx),
-            [&lock(false), &zone_warp(true), &taken("h1")],
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")],
             "{fx:?}"
         );
         assert!(!m.relay_take_pending() && !m.progress_held());
@@ -15327,30 +15576,91 @@ mod tests {
         assert_eq!(banner.title, "YOU HAVE THE BATON");
         assert_eq!(banner.line, "You start at the entrance of Stormveil Castle");
         assert_eq!(banner.tone, FeedTone::Gain);
-        let fx = team_over(&mut m, t0, 4_300, 4_900, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 4_300, 4_900, roundtable(), 1_100);
         assert_eq!(acks(&fx), 0, "acknowledged once");
     }
 
     #[test]
-    fn a_take_without_a_gate_stays_at_the_chapel() {
+    fn a_take_in_progress_keeps_both_locks_until_its_acknowledgement() {
         let t0 = Instant::now();
         let mut m = receiver(t0);
-        receive(
+        receive(&mut m, t0, take("h1"));
+        // A load before the take starts: both locks are written again,
+        // raised, on the frame that starts it.
+        local(&mut m, t0, 1_100, None);
+        let exit = 1_200;
+        let mut fx = Vec::new();
+        for at in (exit..=exit + settle_ms()).step_by(100) {
+            fx.extend(
+                local(&mut m, t0, at, roundtable())
+                    .into_iter()
+                    .map(|e| (at, e)),
+            );
+        }
+        let start = exit + settle_ms();
+        assert_eq!(times_of(&fx, &lock(true)), [start]);
+        assert_eq!(times_of(&fx, &travel(true)), [start]);
+        assert!(tagged_apply(&fx), "{fx:?}");
+        fx.extend(team_over(
             &mut m,
             t0,
-            take_msg("h1", Some(take_state()), TEAM_IGT, &[BOSS], None),
-        );
-        let fx = local(&mut m, t0, 1_100, chapel());
-        assert_eq!(apply_fx(&fx).len(), 2);
-        applied(&mut m, t0, 1_150, "h1");
-        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
-        assert_eq!(flag_fx(&fx), [&lock(false), &taken("h1")]);
-        assert_eq!(m.item_banner().unwrap().line, "You start from the Chapel");
-        // Unlocked at the Chapel for good: no warp, no lock.
-        let fx = team_over(&mut m, t0, 1_300, 20_000, chapel(), 1_100);
+            start + 100,
+            start + 2_000,
+            roundtable(),
+            start,
+        ));
         assert!(
             !fx.iter()
-                .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })),
+                .any(|(_, e)| *e == lock(false) || *e == travel(false)),
+            "{fx:?}"
+        );
+        applied(&mut m, t0, start + 2_050, "h1");
+        let fx = team(&mut m, t0, start + 2_100, roundtable(), start);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")]
+        );
+    }
+
+    #[test]
+    fn a_take_before_the_first_gate_is_warped_to_the_chapel() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        // The server's take before the team's first gate: the Chapel's warp
+        // flag, no zone name.
+        let mut msg = take_msg(
+            "h1",
+            Some(take_state()),
+            TEAM_IGT,
+            &[BOSS],
+            Some(CHAPEL_WARP),
+        );
+        if let MachineMessage::RelayTake { zone_name, .. } = &mut msg {
+            *zone_name = None;
+        }
+        receive(&mut m, t0, msg);
+        let fx = local(&mut m, t0, 1_100, roundtable());
+        assert_eq!(apply_fx(&fx).len(), 2);
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = team(&mut m, t0, 1_200, roundtable(), 1_100);
+        let chapel_warp = Effect::SetGameFlag {
+            flag_id: CHAPEL_WARP,
+            value: true,
+        };
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &chapel_warp, &taken("h1")]
+        );
+        assert_eq!(m.item_banner().unwrap().line, "You start from the Chapel");
+        // The warp's load ends at the Chapel: unlocked there for good, never
+        // sent back to the Roundtable Hold.
+        team(&mut m, t0, 1_300, None, 1_100);
+        let fx = team_over(&mut m, t0, 1_400, 20_000, Some(CHAPEL_MAP), 1_100);
+        assert!(
+            !fx.iter().any(|(_, e)| *e == lock(true)
+                || *e == travel(true)
+                || *e == warp(true)
+                || *e == chapel_warp),
             "{fx:?}"
         );
     }
@@ -15364,10 +15674,13 @@ mod tests {
             *zone_name = None;
         }
         receive(&mut m, t0, msg);
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         applied(&mut m, t0, 1_150, "h1");
-        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
-        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        let fx = team(&mut m, t0, 1_200, roundtable(), 1_100);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")]
+        );
         assert_eq!(
             m.item_banner().unwrap().line,
             "You start at the entrance of the team's zone"
@@ -15383,7 +15696,7 @@ mod tests {
             t0,
             take_msg("h1", None, TEAM_IGT, &[BOSS, 999], Some(ZONE_WARP)),
         );
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         assert_eq!(
             apply_fx(&fx),
             [
@@ -15397,8 +15710,11 @@ mod tests {
             ]
         );
         applied(&mut m, t0, 1_150, "h1");
-        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
-        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        let fx = team(&mut m, t0, 1_200, roundtable(), 1_100);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")]
+        );
     }
 
     #[test]
@@ -15410,7 +15726,7 @@ mod tests {
         m.triggered_flags.insert(BOSS);
         m.handle_message(take_msg("h1", None, 0, &[], None), t0 + ms(1_000));
         update(&mut m, relay_info_with("holder", "ready"), t0, 1_000);
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         assert_eq!(
             apply_fx(&fx),
             [
@@ -15424,16 +15740,24 @@ mod tests {
             ]
         );
         // The game's clock runs on from 0.
-        rx_frame(&mut m, t0, 1_150, chapel(), 50, 100, None);
-        rx_frame(&mut m, t0, 2_150, chapel(), 1_050, 100, None);
+        rx_frame(&mut m, t0, 1_150, roundtable(), 50, 100, None);
+        rx_frame(&mut m, t0, 2_150, roundtable(), 1_050, 100, None);
         assert!(!m.wrong_save);
         assert!(m.triggered_flags.contains(&BOSS), "no save-reload flush");
         applied(&mut m, t0, 2_200, "h1");
-        let fx = rx_frame(&mut m, t0, 2_250, chapel(), 1_150, 100, None);
-        assert_eq!(flag_fx(&fx), [&lock(false), &taken("h1")]);
+        let fx = rx_frame(&mut m, t0, 2_250, roundtable(), 1_150, 100, None);
+        assert_eq!(flag_fx(&fx), [&lock(false), &travel(false), &taken("h1")]);
         let mut status = None;
         for (i, at) in (2_300..=4_300).step_by(100).enumerate() {
-            let fx = rx_frame(&mut m, t0, at, chapel(), 1_200 + 100 * i as u32, 100, None);
+            let fx = rx_frame(
+                &mut m,
+                t0,
+                at,
+                roundtable(),
+                1_200 + 100 * i as u32,
+                100,
+                None,
+            );
             status = fx.iter().find_map(|e| match e {
                 Effect::SendStatusUpdate { igt_ms, .. } => Some(*igt_ms),
                 _ => None,
@@ -15450,7 +15774,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         m.handle_message(take_msg("h1", None, 0, &[], None), t0 + ms(1_000));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         rx_frame(&mut m, t0, 1_200, None, 30_000, 100, None);
         assert!(!m.wrong_save);
     }
@@ -15460,7 +15784,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         assert!(fx.iter().any(|e| matches!(e, Effect::SetIgt { .. })));
         assert!(fx
             .iter()
@@ -15495,7 +15819,7 @@ mod tests {
                 t0,
                 take_msg("h1", Some(take_state()), written, &[BOSS], Some(ZONE_WARP)),
             );
-            let fx = local(&mut m, t0, 1_100, chapel());
+            let fx = local(&mut m, t0, 1_100, roundtable());
             assert_eq!(apply_fx(&fx).len(), 2);
             // A loading screen at once over the written IGT, then its exit.
             let mut fx = Vec::new();
@@ -15505,7 +15829,7 @@ mod tests {
             }
             for at in (3_100..=6_000).step_by(100) {
                 let igt = written + (at - 1_100) as u32;
-                fx.extend(rx_frame(&mut m, t0, at, chapel(), igt, 100, None));
+                fx.extend(rx_frame(&mut m, t0, at, roundtable(), igt, 100, None));
             }
             assert!(!m.wrong_save, "{written}");
             assert!(
@@ -15532,7 +15856,7 @@ mod tests {
                 &mut m,
                 t0,
                 at,
-                chapel(),
+                roundtable(),
                 igt,
                 100,
                 Some(vec![(BOSS, true)]),
@@ -15576,7 +15900,7 @@ mod tests {
         assert!(!needs.poll_flags && !m.wants_flag_reads(needs, false, true));
         assert!(!m.wants_status_update(t0 + ms(1_100), TEAM_IGT));
 
-        let mut fx = local(&mut m, t0, 1_100, chapel());
+        let mut fx = local(&mut m, t0, 1_100, roundtable());
         assert_eq!(apply_fx(&fx).len(), 2, "{fx:?}");
         // A gate flag read meanwhile is left as the scan found it.
         let reads = || Some(vec![(ZONE_FLAG, true)]);
@@ -15584,7 +15908,7 @@ mod tests {
             &mut m,
             t0,
             1_200,
-            chapel(),
+            roundtable(),
             TEAM_IGT + 100,
             100,
             reads(),
@@ -15595,7 +15919,7 @@ mod tests {
             &mut m,
             t0,
             1_400,
-            chapel(),
+            roundtable(),
             TEAM_IGT + 300,
             100,
             reads(),
@@ -15605,13 +15929,21 @@ mod tests {
             MachineMessage::StatusChanged(ConnectionStatus::Connected),
             t0 + ms(1_450),
         );
-        let reconnect = rx_frame(&mut m, t0, 1_500, chapel(), TEAM_IGT + 400, 100, reads());
+        let reconnect = rx_frame(
+            &mut m,
+            t0,
+            1_500,
+            roundtable(),
+            TEAM_IGT + 400,
+            100,
+            reads(),
+        );
         assert!(reconnect.contains(&Effect::SendReady), "{reconnect:?}");
         fx.extend(reconnect);
         // A zone revealed.
         m.handle_message(zone_update("Stormveil Castle", None), t0 + ms(1_550));
         for at in (1_600..=4_100).step_by(100) {
-            fx.extend(team(&mut m, t0, at, chapel(), 1_100));
+            fx.extend(team(&mut m, t0, at, roundtable(), 1_100));
         }
         assert!(m.race_state.current_zone.is_some(), "revealed");
         assert!(
@@ -15631,7 +15963,15 @@ mod tests {
         }));
 
         applied(&mut m, t0, 4_150, "h1");
-        let fx = rx_frame(&mut m, t0, 4_200, chapel(), TEAM_IGT + 3_100, 100, reads());
+        let fx = rx_frame(
+            &mut m,
+            t0,
+            4_200,
+            roundtable(),
+            TEAM_IGT + 3_100,
+            100,
+            reads(),
+        );
         assert!(fx.contains(&taken("h1")), "{fx:?}");
         assert!(
             !fx.iter().any(|e| matches!(
@@ -15645,7 +15985,15 @@ mod tests {
             "progress resumes with the frame after the acknowledgement: {fx:?}"
         );
         // The next scan captures the gate flag; a status update goes out.
-        let fx = rx_frame(&mut m, t0, 4_300, chapel(), TEAM_IGT + 3_200, 100, reads());
+        let fx = rx_frame(
+            &mut m,
+            t0,
+            4_300,
+            roundtable(),
+            TEAM_IGT + 3_200,
+            100,
+            reads(),
+        );
         assert!(
             fx.contains(&Effect::SetGameFlag {
                 flag_id: ZONE_FLAG,
@@ -15675,7 +16023,7 @@ mod tests {
     }
 
     #[test]
-    fn a_take_waits_for_a_good_frame_at_the_chapel() {
+    fn a_take_waits_for_a_good_frame_at_the_roundtable() {
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
         let mut fx = Vec::new();
@@ -15683,7 +16031,7 @@ mod tests {
             fx.extend(local(&mut m, t0, at, Some(IN_ZONE)));
         }
         assert!(fx.contains(&lock(true)));
-        // Away from the Chapel, inside the gate window.
+        // Away from the Roundtable Hold, inside the gate window.
         receive(&mut m, t0, take("h1"));
         assert!(
             m.pre_tick(t0 + ms(1_050), true, true).hp,
@@ -15696,10 +16044,10 @@ mod tests {
         assert_eq!(
             fx.iter().filter(|e| **e == warp(true)).count(),
             1,
-            "sent to the Chapel first: {fx:?}"
+            "sent to the Roundtable Hold first: {fx:?}"
         );
         assert!(apply_fx(&fx).is_empty());
-        // The warp's load, then the Chapel with the runner dead a long while.
+        // The warp's load, then the Hold with the runner dead a long while.
         let mut fx = Vec::new();
         for at in (5_100..=6_000).step_by(100) {
             fx.extend(local(&mut m, t0, at, None));
@@ -15709,7 +16057,7 @@ mod tests {
                 &mut m,
                 t0,
                 at,
-                chapel(),
+                roundtable(),
                 LOCAL_IGT + at as u32,
                 0,
                 None,
@@ -15717,7 +16065,7 @@ mod tests {
         }
         assert!(apply_fx(&fx).is_empty(), "{fx:?}");
         assert!(m.relay_take_pending(), "no local timeout");
-        let fx = local(&mut m, t0, 91_100, chapel());
+        let fx = local(&mut m, t0, 91_100, roundtable());
         assert_eq!(
             apply_fx(&fx),
             full_apply("h1", 1).iter().collect::<Vec<_>>()
@@ -15736,16 +16084,16 @@ mod tests {
         }
         let exit = 2_100;
         for at in (exit..exit + settle_ms()).step_by(100) {
-            let fx = local(&mut m, t0, at, chapel());
+            let fx = local(&mut m, t0, at, roundtable());
             assert!(
                 apply_fx(&fx).is_empty() && flag_fx(&fx).is_empty(),
                 "{at}: {fx:?}"
             );
         }
-        // The lock asserted again, then the take written, on the first
+        // Both locks asserted again, then the take written, on the first
         // settled frame.
-        let fx = local(&mut m, t0, exit + settle_ms(), chapel());
-        assert_eq!(flag_fx(&fx), [&lock(true)]);
+        let fx = local(&mut m, t0, exit + settle_ms(), roundtable());
+        assert_eq!(flag_fx(&fx), [&lock(true), &travel(true)]);
         assert_eq!(
             apply_fx(&fx),
             full_apply("h1", 1).iter().collect::<Vec<_>>()
@@ -15759,7 +16107,7 @@ mod tests {
             let mut m = receiver(t0);
             receive(&mut m, t0, take("h1"));
             if started {
-                local(&mut m, t0, 1_100, chapel());
+                local(&mut m, t0, 1_100, roundtable());
             }
             // The server's 30 s: the receiver reads waiting, the baton free.
             update(&mut m, timer_info(), t0, 1_150);
@@ -15768,21 +16116,21 @@ mod tests {
             let written = if started {
                 1_100
             } else {
-                let fx = local(&mut m, t0, 1_200, chapel());
+                let fx = local(&mut m, t0, 1_200, roundtable());
                 assert_eq!(apply_fx(&fx).len(), 2, "it starts all the same");
                 1_200
             };
-            let fx = team_over(&mut m, t0, written + 100, 8_000, chapel(), written);
+            let fx = team_over(&mut m, t0, written + 100, 8_000, roundtable(), written);
             assert!(
                 !fx.iter()
                     .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. }) || *e == ready(true)),
                 "{started}: {fx:?}"
             );
             applied(&mut m, t0, 8_050, "h1");
-            let fx = team(&mut m, t0, 8_100, chapel(), written);
+            let fx = team(&mut m, t0, 8_100, roundtable(), written);
             assert_eq!(
                 flag_fx(&fx),
-                [&lock(false), &zone_warp(true), &taken("h1")],
+                [&lock(false), &travel(false), &zone_warp(true), &taken("h1")],
                 "{started}"
             );
         }
@@ -15843,7 +16191,7 @@ mod tests {
                 let mut m = receiver(t0);
                 receive(&mut m, t0, take("h1"));
                 if started {
-                    local(&mut m, t0, 1_100, chapel());
+                    local(&mut m, t0, 1_100, roundtable());
                 }
                 event(&mut m, t0);
                 assert!(!m.relay_take_pending(), "{name} {started}");
@@ -15856,13 +16204,13 @@ mod tests {
                     } else {
                         LOCAL_IGT + at as u32
                     };
-                    let frame = rx_frame(&mut m, t0, at, chapel(), igt, 100, None);
+                    let frame = rx_frame(&mut m, t0, at, roundtable(), igt, 100, None);
                     fx.extend(frame.into_iter().map(|e| (at, e)));
                 }
                 assert_eq!(acks(&fx), 0, "{name} {started}");
                 assert!(!tagged_apply(&fx), "{name} {started}: {fx:?}");
                 if name == "another holder" || name == "no holder" {
-                    // A waiting runner again: locked, ready at the Chapel.
+                    // A waiting runner again: locked, ready at the Roundtable Hold.
                     assert_eq!(m.relay_role(), Some(RelayRole::Waiting), "{name}");
                     assert!(times_of(&fx, &lock(false)).is_empty(), "{name} {started}");
                     assert_eq!(times_of(&fx, &ready(true)), [1_300], "{name} {started}");
@@ -15878,12 +16226,12 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         // Sent again during the apply: nothing new.
         assert!(m.handle_message(take("h1"), t0 + ms(1_150)).is_empty());
-        let mut fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
+        let mut fx = team_over(&mut m, t0, 1_200, 2_000, roundtable(), 1_100);
         applied(&mut m, t0, 2_050, "h1");
-        fx.extend(team_over(&mut m, t0, 2_100, 2_100, chapel(), 1_100));
+        fx.extend(team_over(&mut m, t0, 2_100, 2_100, roundtable(), 1_100));
         assert!(!tagged_apply(&fx), "{fx:?}");
         assert_eq!(times_of(&fx, &taken("h1")), [2_100]);
         // The warp's load, into the zone; the lock asserted down after it.
@@ -15908,13 +16256,13 @@ mod tests {
         assert!(m.item_banner().is_none(), "no second banner");
         let fx = team_over(&mut m, t0, 6_300, 7_000, Some(IN_ZONE), 1_100);
         assert_eq!(acks(&fx), 0);
-        // Another take: a new one, applied once back at the Chapel.
+        // Another take: a new one, applied once back at the Roundtable Hold.
         m.handle_message(take("h2"), t0 + ms(7_050));
         assert!(m.relay_take_pending());
         let mut at = 7_100;
         while !team(&mut m, t0, at, Some(IN_ZONE), 1_100).contains(&warp(true)) {
             at += 100;
-            assert!(at < 20_000, "sent back to the Chapel");
+            assert!(at < 20_000, "sent back to the Roundtable Hold");
         }
         team(&mut m, t0, at + 100, None, 1_100);
         let fx = team_over(
@@ -15922,7 +16270,7 @@ mod tests {
             t0,
             at + 200,
             at + 200 + settle_ms(),
-            chapel(),
+            roundtable(),
             1_100,
         );
         let applies: Vec<&Effect> = fx
@@ -15944,7 +16292,7 @@ mod tests {
     /// it), the socket up again at 1_700. Returns the zone flag's message id.
     fn taken_on_a_dead_socket(m: &mut RaceMachine, t0: Instant) -> u64 {
         let reads = Some(vec![(ZONE_FLAG, true)]);
-        let fx = rx_frame(m, t0, 1_300, chapel(), TEAM_IGT + 200, 100, reads);
+        let fx = rx_frame(m, t0, 1_300, roundtable(), TEAM_IGT + 200, 100, reads);
         assert!(fx.contains(&Effect::SetGameFlag {
             flag_id: ZONE_FLAG,
             value: false
@@ -16078,7 +16426,7 @@ mod tests {
             t0,
         );
         m.handle_message(take("h1"), t0 + ms(10));
-        let fx = local(&mut m, t0, 100, chapel());
+        let fx = local(&mut m, t0, 100, roundtable());
         // The lock its save may not hold is raised first, then the take is
         // written.
         let apply = full_apply("h1", 1);
@@ -16087,8 +16435,11 @@ mod tests {
         assert_eq!(apply_fx(&fx), apply.iter().collect::<Vec<_>>());
         assert!(fx.contains(&ready(false)) && !fx.contains(&ready(true)));
         applied(&mut m, t0, 150, "h1");
-        let fx = team(&mut m, t0, 200, chapel(), 100);
-        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        let fx = team(&mut m, t0, 200, roundtable(), 100);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")]
+        );
     }
 
     #[test]
@@ -16097,7 +16448,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         m.handle_message(
             MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
             t0 + ms(1_150),
@@ -16105,7 +16456,7 @@ mod tests {
         applied(&mut m, t0, 1_200, "h1");
         for at in (1_300..=3_000).step_by(100) {
             let igt = TEAM_IGT + (at - 1_100) as u32;
-            let fx = rx_frame_on(&mut m, t0, at, chapel(), igt, 100, None, false);
+            let fx = rx_frame_on(&mut m, t0, at, roundtable(), igt, 100, None, false);
             assert!(flag_fx(&fx).is_empty(), "{at}: {fx:?}");
         }
         m.handle_message(relay_auth("running", Some(flip_info())), t0 + ms(3_050));
@@ -16115,15 +16466,18 @@ mod tests {
         );
         assert!(m.handle_message(take("h1"), t0 + ms(3_060)).is_empty());
         update(&mut m, flip_info(), t0, 3_060);
-        let fx = team(&mut m, t0, 3_100, chapel(), 1_100);
+        let fx = team(&mut m, t0, 3_100, roundtable(), 1_100);
         assert!(apply_fx(&fx).is_empty(), "applied once: {fx:?}");
-        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")]
+        );
 
         // The take sent again before the writes answered.
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         m.handle_message(
             MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
             t0 + ms(1_150),
@@ -16134,14 +16488,17 @@ mod tests {
             t0 + ms(1_200),
         );
         m.handle_message(take("h1"), t0 + ms(1_210));
-        let fx = team_over(&mut m, t0, 1_300, 2_000, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 1_300, 2_000, roundtable(), 1_100);
         assert!(!tagged_apply(&fx) && acks(&fx) == 0, "{fx:?}");
         // Readiness goes again after the auth_ok: false, the take holding.
         assert_eq!(times_of(&fx, &ready(false)), [1_300]);
         assert!(times_of(&fx, &ready(true)).is_empty());
         applied(&mut m, t0, 2_050, "h1");
-        let fx = team(&mut m, t0, 2_100, chapel(), 1_100);
-        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        let fx = team(&mut m, t0, 2_100, roundtable(), 1_100);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true), &taken("h1")]
+        );
     }
 
     #[test]
@@ -16149,17 +16506,24 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let stale = m.relay_apply.as_ref().unwrap().generation;
         let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
-        let fx = team_over(&mut m, t0, 1_200, 1_100 + abandon - 100, chapel(), 1_100);
+        let fx = team_over(
+            &mut m,
+            t0,
+            1_200,
+            1_100 + abandon - 100,
+            roundtable(),
+            1_100,
+        );
         assert_eq!(acks(&fx), 0);
         let fx = team_over(
             &mut m,
             t0,
             1_100 + abandon,
             1_100 + abandon,
-            chapel(),
+            roundtable(),
             1_100,
         );
         assert_eq!(times_of(&fx, &taken("h1")), [1_100 + abandon], "{fx:?}");
@@ -16180,7 +16544,7 @@ mod tests {
             t0,
             1_100 + abandon + 100,
             1_100 + abandon + 2_000,
-            chapel(),
+            roundtable(),
             1_100,
         );
         assert_eq!(acks(&fx), 0);
@@ -16188,8 +16552,8 @@ mod tests {
     }
 
     /// A load cuts the apply in flight at `at` (a death or a quit-out at the
-    /// Chapel): a frame in the load, the shell's `MapChanged` answer, the
-    /// load for `load_ms`, then Chapel frames every 100 ms, all reading the
+    /// Roundtable Hold): a frame in the load, the shell's `MapChanged` answer,
+    /// the load for `load_ms`, then Hold frames every 100 ms, all reading the
     /// IGT written at `written`, until the take starts again. Returns the
     /// time of that start and every effect since `at`, tagged.
     fn cut_by_a_load(
@@ -16207,7 +16571,7 @@ mod tests {
         fx.extend(team_over(m, t0, at + 100, at + load_ms, None, written));
         let mut now = at + load_ms + 100;
         loop {
-            let frame = team(m, t0, now, chapel(), written);
+            let frame = team(m, t0, now, roundtable(), written);
             let started = frame
                 .iter()
                 .any(|e| matches!(e, Effect::ApplyRelayFlags { .. }));
@@ -16229,20 +16593,20 @@ mod tests {
     }
 
     #[test]
-    fn an_apply_cut_by_a_load_starts_the_take_again_at_the_chapel() {
+    fn an_apply_cut_by_a_load_starts_the_take_again_at_the_roundtable() {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         let first = m.relay_apply.as_ref().unwrap().generation;
         assert_eq!(
             apply_fx(&fx),
             full_apply("h1", first).iter().collect::<Vec<_>>()
         );
-        let mut fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
+        let mut fx = team_over(&mut m, t0, 1_200, 2_000, roundtable(), 1_100);
         let (restart, cut) = cut_by_a_load(&mut m, t0, 2_100, 1_100, 1_000);
         fx.extend(cut);
-        // Held at the Chapel all along: locked, nothing acknowledged, no
+        // Held at the Roundtable Hold all along: locked, nothing acknowledged, no
         // progress, no guard fired across the load.
         assert!(m.relay_take_pending() && m.progress_held());
         assert_eq!(acks(&fx), 0, "{fx:?}");
@@ -16258,7 +16622,7 @@ mod tests {
             "{fx:?}"
         );
         assert!(!m.wrong_save && m.triggered_flags.contains(&BOSS));
-        // Started again on the first settled frame at the Chapel: the same
+        // Started again on the first settled frame at the Hold: the same
         // take, its IGT and a new apply under a new generation.
         assert_eq!(restart, 3_200 + settle_ms(), "{fx:?}");
         assert_eq!(
@@ -16271,7 +16635,7 @@ mod tests {
             t0,
             restart + 100,
             restart + 1_000,
-            chapel(),
+            roundtable(),
             restart,
         );
         assert_eq!(times_of(&fx, &taken("h1")), [restart + 100], "{fx:?}");
@@ -16288,7 +16652,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let first = m.relay_apply.as_ref().unwrap().generation;
         let mut written = 1_100;
         for start in 1..max {
@@ -16316,7 +16680,7 @@ mod tests {
             t0,
             exit,
             exit + settle_ms() + 1_000,
-            chapel(),
+            roundtable(),
             written,
         ));
         assert!(!tagged_apply(&fx), "{fx:?}");
@@ -16335,7 +16699,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         // A quit-out longer than the bound of the first start.
         let (restart, fx) = cut_by_a_load(&mut m, t0, 1_200, 1_100, abandon + 5_000);
         assert!(
@@ -16350,7 +16714,7 @@ mod tests {
             &mut m,
             t0,
             restart + 600,
-            chapel(),
+            roundtable(),
             TEAM_IGT + 10_000,
             100,
             None,
@@ -16358,7 +16722,7 @@ mod tests {
         assert!(!fx.contains(&taken("h1")), "{fx:?}");
         assert!(fx.contains(&Effect::SetIgt { ms: TEAM_IGT }), "{fx:?}");
         // The write shows: acknowledged, the time confirmed.
-        let fx = team(&mut m, t0, restart + 700, chapel(), restart);
+        let fx = team(&mut m, t0, restart + 700, roundtable(), restart);
         assert!(fx.contains(&taken("h1")), "{fx:?}");
         assert_ne!(
             m.get_status(t0 + ms(restart + 700)),
@@ -16377,9 +16741,9 @@ mod tests {
             let t0 = Instant::now();
             let mut m = receiver(t0);
             receive(&mut m, t0, take("h1"));
-            local(&mut m, t0, 1_100, chapel());
+            local(&mut m, t0, 1_100, roundtable());
             applied_with(&mut m, t0, 1_150, "h1", end);
-            let fx = team_over(&mut m, t0, 1_200, 5_000, chapel(), 1_100);
+            let fx = team_over(&mut m, t0, 1_200, 5_000, roundtable(), 1_100);
             assert_eq!(times_of(&fx, &taken("h1")), [1_200], "{end:?}: {fx:?}");
             assert!(!tagged_apply(&fx), "{end:?}: started once");
             assert_ne!(
@@ -16395,7 +16759,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let attempt = m.run_attempt;
         // The write failed: the game reads the runner's own IGT, far below.
         let own = |at: u64| 5_000 + at as u32;
@@ -16424,7 +16788,7 @@ mod tests {
         receive(&mut m, t0, take("h1"));
         let first = m.relay_apply_gen + 1;
         assert!(!m.relay_apply_wanted(first), "not started yet");
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         assert!(m.relay_apply_wanted(first));
         assert!(!m.relay_apply_wanted(first + 1));
         applied(&mut m, t0, 1_150, "h1");
@@ -16434,7 +16798,7 @@ mod tests {
         // machine still waits for its answer.
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let generation = m.relay_apply.as_ref().unwrap().generation;
         m.handle_message(take("h2"), t0 + ms(1_150));
         assert!(!m.relay_apply_wanted(generation));
@@ -16443,7 +16807,7 @@ mod tests {
         // Given up: another teammate named holder.
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let generation = m.relay_apply.as_ref().unwrap().generation;
         update(&mut m, relay_info("waiting"), t0, 1_200);
         assert!(!m.relay_take_pending());
@@ -16452,12 +16816,19 @@ mod tests {
         // Abandoned at the machine's bound.
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let generation = m.relay_apply.as_ref().unwrap().generation;
         let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
-        team_over(&mut m, t0, 1_200, 1_100 + abandon - 100, chapel(), 1_100);
+        team_over(
+            &mut m,
+            t0,
+            1_200,
+            1_100 + abandon - 100,
+            roundtable(),
+            1_100,
+        );
         assert!(m.relay_apply_wanted(generation));
-        team(&mut m, t0, 1_100 + abandon, chapel(), 1_100);
+        team(&mut m, t0, 1_100 + abandon, roundtable(), 1_100);
         assert!(!m.relay_apply_wanted(generation));
     }
 
@@ -16466,20 +16837,20 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let first = m.relay_apply.as_ref().unwrap().generation;
         m.handle_message(take("h2"), t0 + ms(1_150));
-        let fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 1_200, 2_000, roundtable(), 1_100);
         assert!(!tagged_apply(&fx) && acks(&fx) == 0, "{fx:?}");
         // The first take's writes are over: the second goes.
         m.relay_state_applied("h1", first, Some(ApplyEnd::Complete), t0 + ms(2_050));
-        let fx = team(&mut m, t0, 2_100, chapel(), 1_100);
+        let fx = team(&mut m, t0, 2_100, roundtable(), 1_100);
         assert_eq!(
             apply_fx(&fx),
             full_apply("h2", first + 1).iter().collect::<Vec<_>>()
         );
         applied(&mut m, t0, 2_150, "h2");
-        let fx = team_over(&mut m, t0, 2_200, 3_000, chapel(), 2_100);
+        let fx = team_over(&mut m, t0, 2_200, 3_000, roundtable(), 2_100);
         assert_eq!(times_of(&fx, &taken("h2")), [2_200]);
         assert!(times_of(&fx, &taken("h1")).is_empty());
     }
@@ -16489,12 +16860,12 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         let stale = m.relay_apply.as_ref().unwrap().generation;
         m.handle_message(take("h2"), t0 + ms(1_150));
         // The first apply is abandoned; the newer take starts at once.
         let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
-        let fx = team_over(&mut m, t0, 1_200, 1_100 + abandon, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 1_200, 1_100 + abandon, roundtable(), 1_100);
         let started: Vec<u64> = fx
             .iter()
             .filter(|(_, e)| matches!(e, Effect::ApplyRelayFlags { handoff_id, .. } if handoff_id == "h2"))
@@ -16515,7 +16886,7 @@ mod tests {
             t0,
             written + 100,
             written + 1_000,
-            chapel(),
+            roundtable(),
             written,
         );
         assert_eq!(acks(&fx), 0, "{fx:?}");
@@ -16525,7 +16896,7 @@ mod tests {
             t0,
             written + 1_100,
             written + 1_100,
-            chapel(),
+            roundtable(),
             written,
         );
         assert_eq!(times_of(&fx, &taken("h2")), [written + 1_100]);
@@ -16537,14 +16908,14 @@ mod tests {
         let mut m = acknowledged(t0);
         update(&mut m, timer_info(), t0, 1_250);
         assert_eq!(m.relay_role(), Some(RelayRole::Holder));
-        let fx = team_over(&mut m, t0, 1_300, 4_000, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 1_300, 4_000, roundtable(), 1_100);
         assert!(
             !fx.iter().any(|(_, e)| *e == lock(true) || *e == warp(true)),
             "{fx:?}"
         );
         // The server read the acknowledgement: confirmed.
         update(&mut m, flip_info(), t0, 4_050);
-        let fx = team_over(&mut m, t0, 4_100, 15_000, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 4_100, 15_000, roundtable(), 1_100);
         assert!(!fx.iter().any(|(_, e)| *e == lock(true) || *e == warp(true)));
         assert_eq!(m.relay_role(), Some(RelayRole::Holder));
 
@@ -16552,7 +16923,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = acknowledged(t0);
         update(&mut m, timer_info(), t0, 1_250);
-        let fx = team_over(&mut m, t0, 1_300, 7_000, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 1_300, 7_000, roundtable(), 1_100);
         let confirm = crate::core::relay::TAKEN_CONFIRM.as_millis() as u64;
         assert_eq!(times_of(&fx, &lock(true)), [1_200 + confirm], "{fx:?}");
         assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
@@ -16563,7 +16934,7 @@ mod tests {
         let mut m = acknowledged(t0);
         update(&mut m, relay_info("waiting"), t0, 1_250);
         assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
-        let fx = team(&mut m, t0, 1_300, chapel(), 1_100);
+        let fx = team(&mut m, t0, 1_300, roundtable(), 1_100);
         assert!(
             fx.contains(&lock(true)) && fx.contains(&zone_warp(false)),
             "{fx:?}"
@@ -16581,7 +16952,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = acknowledged(t0);
         update(&mut m, flip_info(), t0, 1_250);
-        let fx = team_over(&mut m, t0, 1_300, 20_000, chapel(), 1_100);
+        let fx = team_over(&mut m, t0, 1_300, 20_000, roundtable(), 1_100);
         let retry = crate::core::relay::WARP_RETRY.as_millis() as u64;
         assert_eq!(
             times_of(&fx, &zone_warp(false)),
@@ -16641,7 +17012,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = acknowledged(t0);
         release(&mut m, t0, 1_250, "h9");
-        let fx = team(&mut m, t0, 1_300, chapel(), 1_100);
+        let fx = team(&mut m, t0, 1_300, roundtable(), 1_100);
         assert_eq!(captures(&fx), [Some("h9".to_string())]);
         let fx = answer(&mut m, t0, 1_350, Some("h9"), Some(take_state()));
         assert!(matches!(
@@ -16653,7 +17024,7 @@ mod tests {
         ));
         // The flip: waiting again, the warp flag still raised lowered, locked.
         update(&mut m, relay_info("waiting"), t0, 1_400);
-        let fx = team(&mut m, t0, 1_500, chapel(), 1_100);
+        let fx = team(&mut m, t0, 1_500, roundtable(), 1_100);
         assert!(
             fx.contains(&zone_warp(false)) && fx.contains(&lock(true)),
             "{fx:?}"
@@ -16918,13 +17289,13 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         update(&mut m, free_info(0), t0, 950);
-        assert!(key_over(&mut m, t0, 1_000, 1_800, chapel(), true).is_empty());
-        key_cancel(&mut m, t0, 1_900, chapel());
-        let fx = key_over(&mut m, t0, 2_000, 2_900, chapel(), false);
+        assert!(key_over(&mut m, t0, 1_000, 1_800, roundtable(), true).is_empty());
+        key_cancel(&mut m, t0, 1_900, roundtable());
+        let fx = key_over(&mut m, t0, 2_000, 2_900, roundtable(), false);
         assert!(fx.is_empty());
         // The hold the cancel cut does not complete from its old start.
-        assert!(key_over(&mut m, t0, 3_000, 3_900, chapel(), true).is_empty());
-        let fx = key_over(&mut m, t0, 4_000, 4_100, chapel(), true);
+        assert!(key_over(&mut m, t0, 3_000, 3_900, roundtable(), true).is_empty());
+        let fx = key_over(&mut m, t0, 4_000, 4_100, roundtable(), true);
         assert_eq!(fx, [(4_000, Effect::SendRelayTakeRequest)]);
     }
 
@@ -16968,8 +17339,8 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         update(&mut m, free_info(0), t0, 950);
-        assert!(key_over(&mut m, t0, 1_000, 1_900, chapel(), true).is_empty());
-        let fx = key_over(&mut m, t0, 2_000, 3_000, chapel(), true);
+        assert!(key_over(&mut m, t0, 1_000, 1_900, roundtable(), true).is_empty());
+        let fx = key_over(&mut m, t0, 2_000, 3_000, roundtable(), true);
         assert_eq!(fx, [(2_000, Effect::SendRelayTakeRequest)]);
     }
 
@@ -16986,10 +17357,10 @@ mod tests {
         update(&mut m, free_info(42), t0, 950);
         assert_eq!(m.relay_free_in_s(t0 + ms(18_950)), Some(24));
         // Held through the wait: that hold started before the offer.
-        let fx = key_over(&mut m, t0, 1_000, 45_000, chapel(), true);
+        let fx = key_over(&mut m, t0, 1_000, 45_000, roundtable(), true);
         assert!(fx.is_empty(), "{fx:?}");
-        key_on(&mut m, t0, 45_100, chapel(), false);
-        let fx = key_over(&mut m, t0, 45_200, 46_300, chapel(), true);
+        key_on(&mut m, t0, 45_100, roundtable(), false);
+        let fx = key_over(&mut m, t0, 45_200, 46_300, roundtable(), true);
         assert_eq!(fx, [(46_200, Effect::SendRelayTakeRequest)]);
     }
 
@@ -17031,7 +17402,7 @@ mod tests {
             let mut info = free_info(0);
             edit(&mut info);
             update(&mut m, info, t0, 950);
-            let fx = key_over(&mut m, t0, 1_000, 3_000, chapel(), true);
+            let fx = key_over(&mut m, t0, 1_000, 3_000, roundtable(), true);
             assert!(fx.is_empty(), "{case}: {fx:?}");
         }
     }
@@ -17041,13 +17412,13 @@ mod tests {
         let t0 = Instant::now();
         let mut m = RaceMachine::new(1, String::new(), false, t0);
         m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
-        assert!(key_over(&mut m, t0, 0, 3_000, chapel(), true).is_empty());
+        assert!(key_over(&mut m, t0, 0, 3_000, roundtable(), true).is_empty());
         let mut m = receiver(t0);
         m.handle_message(MachineMessage::RaceStart(10), t0 + ms(900));
         let mut info = relay_info_with("waiting", "ready");
         info.baton_free_in_s = Some(0);
         update(&mut m, info, t0, 950);
-        assert!(key_over(&mut m, t0, 1_000, 4_000, chapel(), true).is_empty());
+        assert!(key_over(&mut m, t0, 1_000, 4_000, roundtable(), true).is_empty());
     }
 
     #[test]
@@ -17057,10 +17428,10 @@ mod tests {
         let mut info = free_info(0);
         info.members[0].ready = false;
         m.handle_message(relay_auth("running", Some(info)), t0 + ms(1_000));
-        let fx = key_on(&mut m, t0, 1_050, chapel(), false);
+        let fx = key_on(&mut m, t0, 1_050, roundtable(), false);
         assert!(fx.contains(&ready(true)), "sent again: {fx:?}");
-        key_on(&mut m, t0, 1_100, chapel(), false);
-        let fx = key_over(&mut m, t0, 1_200, 2_300, chapel(), true);
+        key_on(&mut m, t0, 1_100, roundtable(), false);
+        let fx = key_over(&mut m, t0, 1_200, 2_300, roundtable(), true);
         assert_eq!(fx, [(2_200, Effect::SendRelayTakeRequest)]);
     }
 
@@ -17069,33 +17440,33 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         update(&mut m, free_info(0), t0, 950);
-        let fx = key_over(&mut m, t0, 1_000, 2_000, chapel(), true);
+        let fx = key_over(&mut m, t0, 1_000, 2_000, roundtable(), true);
         assert_eq!(fx.len(), 1);
-        key_on(&mut m, t0, 2_100, chapel(), false);
-        let fx = key_over(&mut m, t0, 2_200, 3_500, chapel(), true);
+        key_on(&mut m, t0, 2_100, roundtable(), false);
+        let fx = key_over(&mut m, t0, 2_200, 3_500, roundtable(), true);
         assert!(fx.is_empty(), "no answer yet: {fx:?}");
         // The refusal frees it and is shown.
         m.handle_message(
             MachineMessage::RelayRefused {
                 code: "not_ready".to_string(),
-                message: "Wait at the Chapel first".to_string(),
+                message: "Wait at the Roundtable Hold first".to_string(),
             },
             t0 + ms(3_600),
         );
         assert_eq!(
             m.get_status(t0 + ms(3_700)),
-            Some("Wait at the Chapel first")
+            Some("Wait at the Roundtable Hold first")
         );
-        key_on(&mut m, t0, 3_700, chapel(), false);
-        let fx = key_over(&mut m, t0, 3_800, 4_900, chapel(), true);
+        key_on(&mut m, t0, 3_700, roundtable(), false);
+        let fx = key_over(&mut m, t0, 3_800, 4_900, roundtable(), true);
         assert_eq!(fx, [(4_800, Effect::SendRelayTakeRequest)]);
         // Never answered: bounded.
-        key_on(&mut m, t0, 5_000, chapel(), false);
+        key_on(&mut m, t0, 5_000, roundtable(), false);
         let late = 4_800 + crate::core::relay::REQUEST_TIMEOUT.as_millis() as u64;
-        let fx = key_over(&mut m, t0, late - 1_300, late - 200, chapel(), true);
+        let fx = key_over(&mut m, t0, late - 1_300, late - 200, roundtable(), true);
         assert!(fx.is_empty());
-        key_on(&mut m, t0, late - 100, chapel(), false);
-        let fx = key_over(&mut m, t0, late, late + 1_100, chapel(), true);
+        key_on(&mut m, t0, late - 100, roundtable(), false);
+        let fx = key_over(&mut m, t0, late, late + 1_100, roundtable(), true);
         assert_eq!(fx, [(late + 1_000, Effect::SendRelayTakeRequest)]);
     }
 
@@ -17331,9 +17702,9 @@ mod tests {
 
     // The take's IGT is checked before it is acknowledged.
 
-    /// A frame at `at` reading `igt`, on the Chapel, HP 100.
+    /// A frame at `at` reading `igt`, at the Roundtable Hold, HP 100.
     fn igt_frame(m: &mut RaceMachine, t0: Instant, at: u64, igt: u32) -> Vec<Effect> {
-        rx_frame(m, t0, at, chapel(), igt, 100, None)
+        rx_frame(m, t0, at, roundtable(), igt, 100, None)
     }
 
     /// A take started at 1_100 (its IGT written then) and answered by the
@@ -17341,7 +17712,7 @@ mod tests {
     fn started_take(t0: Instant) -> RaceMachine {
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         assert!(fx.contains(&Effect::SetIgt { ms: TEAM_IGT }));
         applied(&mut m, t0, 1_150, "h1");
         m
@@ -17439,7 +17810,7 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         applied(&mut m, t0, 1_150, "h1");
         let bound = 1_100 + crate::core::relay::APPLY_ABANDON.as_millis() as u64;
         for at in (1_200..bound).step_by(100) {
@@ -17467,7 +17838,7 @@ mod tests {
             t0,
             take_msg("h1", Some(take_state()), 0, &[], Some(ZONE_WARP)),
         );
-        local(&mut m, t0, 1_100, chapel());
+        local(&mut m, t0, 1_100, roundtable());
         applied(&mut m, t0, 1_150, "h1");
         let own = 1_200_000; // 20 minutes
         let bound = 1_100 + crate::core::relay::APPLY_ABANDON.as_millis() as u64;
@@ -17487,7 +17858,7 @@ mod tests {
             death_count: Some(0),
             position_readable: true,
             loading_screen: Some(false),
-            map_id: chapel(),
+            map_id: roundtable(),
             hp: Some(100),
             ..FrameSnapshot::default()
         };
@@ -17511,7 +17882,7 @@ mod tests {
             t0,
             take_msg("h1", Some(take_state()), 0, &[], Some(ZONE_WARP)),
         );
-        let fx = local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, roundtable());
         assert!(fx.contains(&Effect::SetIgt { ms: 0 }), "{fx:?}");
         applied(&mut m, t0, 1_150, "h1");
         let fx = igt_frame(&mut m, t0, 1_200, 0);
@@ -17807,7 +18178,7 @@ mod tests {
             .detail
             .clone();
         assert!(prompt.starts_with("Hold F8"), "{prompt}");
-        // Not at the Chapel with the lock yet: the prompt is not offered.
+        // Not at the Roundtable Hold with both locks yet: the prompt is not offered.
         assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
         assert!(!m.relay_wait_hold_bar());
         m.relay_ready_sent = Some(true);

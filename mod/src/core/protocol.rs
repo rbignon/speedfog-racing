@@ -84,7 +84,7 @@ pub enum ClientMessage {
         talisman_id: Option<u32>,
     },
     /// Relay (1.19): a waiting runner is (or stops being) loaded at the
-    /// Chapel with its lock raised.
+    /// Roundtable Hold with its lock and travel lock raised.
     RelayReady { ready: bool },
     /// Relay (1.19): the holder confirmed a teammate in the menu.
     RelayHandoffRequest { to_participant_id: String },
@@ -813,10 +813,12 @@ pub enum ServerMessage {
     ItemNotice { banner: ItemBanner },
     /// Relay (1.19): the team's `RelayInfo` changed; replaces the cached one.
     RelayUpdate { relay: Box<RelayInfo> },
-    /// Relay (1.19), to the holder: send your state, lock, go to the Chapel.
+    /// Relay (1.19), to the holder: send your state, lock, go to the
+    /// Roundtable Hold.
     RelayRelease { handoff_id: String, to_name: String },
     /// Relay (1.19), to the new holder: the state to apply. `state` is null
-    /// when none is known yet; `warp_flag` is null before the team's first gate.
+    /// when none is known yet; `warp_flag` is the Chapel's before the team's
+    /// first gate.
     RelayTake {
         handoff_id: String,
         state: Option<CharacterState>,
