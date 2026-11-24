@@ -31,7 +31,7 @@ use crate::core::relay::{
     TakePhase, WarpStep,
 };
 use crate::core::relay_apply::ApplyEnd;
-use crate::core::relay_items;
+use crate::core::relay_capture;
 use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
 use crate::core::relay_view::{self, RelayView, WaitBanner};
 use crate::core::timed_effects::TimedEffects;
@@ -339,13 +339,14 @@ pub enum Effect {
     SendRelayReady {
         ready: bool,
     },
-    /// Capture the character's state on the shell's worker thread. Contract
-    /// with the shell: the result is delivered on the tracker's frame thread, as an
-    /// input of the machine (`RaceMachine::relay_state_captured`), never by
-    /// calling into the machine from the worker thread, and it carries this
-    /// `generation`. A shell that never answers is tolerated: the machine
-    /// abandons the capture after `relay::CAPTURE_ABANDON` and drops a late
-    /// answer. `handoff_id` is `None` for a zone checkpoint.
+    /// Capture the holder's state (its lit graces) on the shell's worker
+    /// thread. Contract with the shell: the result is delivered on the
+    /// tracker's frame thread, as an input of the machine
+    /// (`RaceMachine::relay_state_captured`), never by calling into the
+    /// machine from the worker thread, and it carries this `generation`. A
+    /// shell that never answers is tolerated: the machine abandons the
+    /// capture after `relay::CAPTURE_ABANDON` and drops a late answer.
+    /// `handoff_id` is `None` for a zone checkpoint.
     CaptureRelayState {
         handoff_id: Option<String>,
         generation: u64,
@@ -357,34 +358,23 @@ pub enum Effect {
         state: CharacterState,
         igt_ms: u32,
     },
-    /// Write the character's attributes (vigor to arcane, in the game's
-    /// order), level and runes in place of the game's.
-    WriteCharacterStats {
-        attributes: [u32; 8],
-        level: u32,
-        runes: u32,
-    },
     /// Overwrite the in-game timer (see `GameState::write_igt`).
     SetIgt {
         ms: u32,
     },
-    /// Apply a take's world: give the `items` the character lacks
-    /// (`relay_items::missing_items`, each id checked against its param
-    /// table first), raise the boss defeat `flags` and the `grace_flags`
-    /// that are graces of this game. The shell plans on its worker thread
-    /// and writes on its frame thread, the one that ticks the machine, over
-    /// several frames. Contract with the shell, as for `CaptureRelayState`:
-    /// the outcome is delivered on that frame thread, as an input of the
-    /// machine
-    /// (`RaceMachine::relay_state_applied`) carrying this `generation` and
-    /// how the writes ended, whatever part of it could not be done (the
-    /// shell logs that). A shell
-    /// that never answers is tolerated: the machine abandons the apply after
+    /// Apply a take's world: raise the boss defeat `flags` and the
+    /// `grace_flags` that are graces of this game. The shell plans on its
+    /// worker thread and writes on its frame thread, the one that ticks the
+    /// machine, over several frames. Contract with the shell, as for
+    /// `CaptureRelayState`: the outcome is delivered on that frame thread,
+    /// as an input of the machine (`RaceMachine::relay_state_applied`)
+    /// carrying this `generation` and how the writes ended, whatever part
+    /// of it could not be done (the shell logs that). A shell that never
+    /// answers is tolerated: the machine abandons the apply after
     /// `relay::APPLY_ABANDON` and ignores a late answer.
-    ApplyRelayItems {
+    ApplyRelayFlags {
         handoff_id: String,
         generation: u64,
-        items: Vec<u32>,
         flags: Vec<u32>,
         grace_flags: Vec<u32>,
     },
@@ -1404,7 +1394,7 @@ impl RaceMachine {
     }
 
     /// Whether the shell should go on writing the apply it was asked with
-    /// `generation` (`Effect::ApplyRelayItems`): that apply is in flight and
+    /// `generation` (`Effect::ApplyRelayFlags`): that apply is in flight and
     /// its take is still applying, neither given up, replaced by a newer
     /// take, nor abandoned. The machine still waits for the answer of an
     /// apply in flight that is no longer wanted: the shell stops its writes
@@ -1893,7 +1883,7 @@ impl RaceMachine {
     /// Give up the take in progress, without `relay_taken` ever: the server
     /// does not answer a `relay_taken` it ignores, so this is how the runner
     /// learns that the baton went elsewhere. What it already wrote stays (a
-    /// later take overwrites the stats and the IGT, items are a union), an
+    /// later take writes the IGT again, a flag raised stays raised), an
     /// apply still in flight answers for nothing, and the lock follows the
     /// role again.
     fn relay_give_up_take(&mut self, reason: &'static str) {
@@ -4735,7 +4725,7 @@ impl RaceMachine {
                 take.handoff_id == asked.handoff_id && take.phase == TakePhase::Applying
             }) {
                 take.phase = TakePhase::Applied;
-                self.set_status("Baton taken: items may be missing".to_string(), now);
+                self.set_status("Baton taken: graces may be missing".to_string(), now);
             }
         }
         let waiting_live = self.relay_waiting_live();
@@ -5023,21 +5013,17 @@ impl RaceMachine {
     }
 
     /// The frame that writes a take, while the lock holds the runner at the
-    /// Chapel, in this order: the stats (only a plausible state's), the IGT
-    /// (on every take, also without a state: the runner's own IGT would
-    /// fail the team's fresh-save gate or freeze the team's IGT), then the
-    /// apply (the state's items and graces, the defeat flags of the seed's
-    /// bosses), which the shell plans on its worker thread and writes over
-    /// the next frames. The IGT guards are rebased on
+    /// Chapel, in this order: the IGT (on every take, also without a state:
+    /// the runner's own IGT would fail the team's fresh-save gate or freeze
+    /// the team's IGT), then the apply (the state's graces, the defeat
+    /// flags of the seed's bosses), which the shell plans on its worker
+    /// thread and writes over the next frames. Nothing of the character is
+    /// written: each runner keeps their own. The IGT guards are rebased on
     /// the IGT written, so its jump reads as no reload, no wrong save and no
     /// quit-out, and the bosses written are marked reported. The take keeps
     /// its state and flags: a start a load cut is made again from them
     /// (`relay_state_applied`), the acknowledgement's IGT window then
-    /// measured from the last start. The stats are written at the first
-    /// start only: the attributes and the level survive a death and a
-    /// quit-out, and the runes a death at the Chapel dropped lie in the
-    /// bloodstain where the runner respawns, so writing them again would
-    /// double them. The IGT and the apply go at every start.
+    /// measured from the last start.
     fn relay_start_take(&mut self, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_mut() else {
             return;
@@ -5050,40 +5036,23 @@ impl RaceMachine {
         let start = take.starts;
         let handoff_id = take.handoff_id.clone();
         let igt_ms = take.igt_ms;
-        let state = take.state.clone();
+        let grace_flags = take
+            .state
+            .as_ref()
+            .map(|state| state.grace_flags.clone())
+            .unwrap_or_default();
         let defeat_flags = take.defeat_flags.clone();
-        match &state {
-            Some(_) if start > 1 => {}
-            Some(state) if relay_items::stats_plausible(state) => {
-                effects.push(Effect::WriteCharacterStats {
-                    attributes: state.attributes,
-                    level: state.level,
-                    runes: state.runes,
-                });
-            }
-            Some(state) => warn!(
-                attributes = ?state.attributes,
-                level = state.level,
-                runes = state.runes,
-                "[RELAY] Stats not plausible, not written"
-            ),
-            None => {}
-        }
         effects.push(Effect::SetIgt { ms: igt_ms });
         let flags: Vec<u32> = defeat_flags
             .into_iter()
             .filter(|flag| self.boss_flags.binary_search(flag).is_ok())
             .collect();
-        let (items, grace_flags) = state
-            .map(|state| (state.items, state.grace_flags))
-            .unwrap_or_default();
         self.relay_apply_gen = self.relay_apply_gen.wrapping_add(1);
         let generation = self.relay_apply_gen;
         info!(
             handoff_id = %handoff_id,
             start,
             igt_ms,
-            items = items.len(),
             graces = grace_flags.len(),
             bosses = flags.len(),
             "[RELAY] Take started"
@@ -5094,10 +5063,9 @@ impl RaceMachine {
             asked_at: now,
         });
         self.triggered_flags.extend(flags.iter().copied());
-        effects.push(Effect::ApplyRelayItems {
+        effects.push(Effect::ApplyRelayFlags {
             handoff_id,
             generation,
-            items,
             flags,
             grace_flags,
         });
@@ -5123,7 +5091,7 @@ impl RaceMachine {
     /// the same (the server's own guards judge the reports) with the "time
     /// not confirmed" status and the guard references cleared; on a frame in
     /// the window the references are rebased on the reading. A take whose
-    /// last apply a load cut is acknowledged with the status "items may be
+    /// last apply a load cut is acknowledged with the status "graces may be
     /// missing" (the IGT's status, when both apply, shows instead).
     fn relay_ack_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_ref() else {
@@ -5149,7 +5117,7 @@ impl RaceMachine {
             return;
         }
         if apply_cut {
-            self.set_status("Baton taken: items may be missing".to_string(), now);
+            self.set_status("Baton taken: graces may be missing".to_string(), now);
         }
         if !right {
             warn!(
@@ -5234,7 +5202,7 @@ impl RaceMachine {
         );
     }
 
-    /// The shell's answer to `Effect::ApplyRelayItems`, delivered on the
+    /// The shell's answer to `Effect::ApplyRelayFlags`, delivered on the
     /// tracker's frame thread with the `generation` the effect carried and
     /// how its writes ended (`None`: its plan never came, nothing written):
     /// the apply is over, whatever part of it could not be done (the shell
@@ -5244,12 +5212,12 @@ impl RaceMachine {
     /// frame, unless a load ended the writes (`ApplyEnd::MapChanged`: a death
     /// or a quit-out at the Chapel) before the take's `relay::TAKE_STARTS_MAX`
     /// starts: the take is then put back to be started again on the next
-    /// loaded, settled frame at the Chapel (the IGT written again, not the
-    /// stats, and an apply that gives only what is still lacking), the lock
-    /// still raised and progress still held. The last start's apply is
-    /// acknowledged however it ended, with the status "Baton taken: items
-    /// may be missing" after a load. A take replaced or given up since
-    /// changes nothing (a newer take waiting for the shell starts).
+    /// loaded, settled frame at the Chapel (the IGT written again and a new
+    /// apply), the lock still raised and progress still held. The last
+    /// start's apply is acknowledged however it ended, with the status
+    /// "Baton taken: graces may be missing" after a load. A take replaced or
+    /// given up since changes nothing (a newer take waiting for the shell
+    /// starts).
     pub fn relay_state_applied(
         &mut self,
         handoff_id: &str,
@@ -5502,13 +5470,12 @@ impl RaceMachine {
                 }
             }
         }
-        let cut = relay_items::fit_to_wire(&mut state);
+        let cut = relay_capture::fit_to_wire(&mut state);
         if cut > 0 {
             warn!(cut, "[RELAY] State over the wire caps, values cut");
         }
         info!(
             ?handoff_id,
-            items = state.items.len(),
             graces = state.grace_flags.len(),
             "[RELAY] State captured"
         );
@@ -14393,10 +14360,6 @@ mod tests {
 
     fn char_state() -> CharacterState {
         CharacterState {
-            attributes: [20, 15, 18, 16, 14, 9, 8, 7],
-            level: 30,
-            runes: 1234,
-            items: vec![2_000_005, 0x4000_0001],
             grace_flags: vec![71800],
         }
     }
@@ -15081,15 +15044,15 @@ mod tests {
     fn an_oversized_state_is_cut_to_the_wire_caps() {
         let (mut m, t0) = holder_with_capture_in_flight();
         let mut big = char_state();
-        big.items = (0..4_005).map(|i| 0x4000_0000 + i).rev().collect();
-        big.grace_flags = vec![2_147_483_648, 71800, 71800];
+        big.grace_flags = (0..1_005).map(|i| 71_000 + i).rev().collect();
+        big.grace_flags.extend([2_147_483_648, 71_000]);
         let fx = answer(&mut m, t0, 150, Some("h1"), Some(big));
         let [Effect::SendRelayState { state, .. }] = &fx[..] else {
             panic!("{fx:?}");
         };
-        assert_eq!(state.items.len(), 4_000);
-        assert_eq!(state.items[0], 0x4000_0000);
-        assert_eq!(state.grace_flags, [71800]);
+        assert_eq!(state.grace_flags.len(), 1_000);
+        assert_eq!(state.grace_flags[0], 71_000);
+        assert_eq!(state.grace_flags.last(), Some(&71_999));
     }
 
     // ------------------------------------------------------------------
@@ -15115,14 +15078,9 @@ mod tests {
         }
     }
 
-    /// The protocol tests' state, its level the sum of its attributes
-    /// minus 79 (the game's rule, which `stats_plausible` checks).
+    /// The protocol tests' state.
     fn take_state() -> CharacterState {
         CharacterState {
-            attributes: [40, 20, 25, 30, 14, 9, 9, 7],
-            level: 75,
-            runes: 15230,
-            items: vec![1048576100, 2147493648],
             grace_flags: vec![71000, 76101],
         }
     }
@@ -15275,14 +15233,7 @@ mod tests {
 
     fn apply_fx(fx: &[Effect]) -> Vec<&Effect> {
         fx.iter()
-            .filter(|e| {
-                matches!(
-                    e,
-                    Effect::WriteCharacterStats { .. }
-                        | Effect::SetIgt { .. }
-                        | Effect::ApplyRelayItems { .. }
-                )
-            })
+            .filter(|e| matches!(e, Effect::SetIgt { .. } | Effect::ApplyRelayFlags { .. }))
             .collect()
     }
 
@@ -15311,16 +15262,10 @@ mod tests {
 
     fn full_apply(id: &str, generation: u64) -> Vec<Effect> {
         vec![
-            Effect::WriteCharacterStats {
-                attributes: [40, 20, 25, 30, 14, 9, 9, 7],
-                level: 75,
-                runes: 15230,
-            },
             Effect::SetIgt { ms: TEAM_IGT },
-            Effect::ApplyRelayItems {
+            Effect::ApplyRelayFlags {
                 handoff_id: id.to_string(),
                 generation,
-                items: vec![1048576100, 2147493648],
                 flags: vec![BOSS],
                 grace_flags: vec![71000, 76101],
             },
@@ -15386,7 +15331,7 @@ mod tests {
             take_msg("h1", Some(take_state()), TEAM_IGT, &[BOSS], None),
         );
         let fx = local(&mut m, t0, 1_100, chapel());
-        assert_eq!(apply_fx(&fx).len(), 3);
+        assert_eq!(apply_fx(&fx).len(), 2);
         applied(&mut m, t0, 1_150, "h1");
         let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
         assert_eq!(flag_fx(&fx), [&lock(false), &taken("h1")]);
@@ -15420,7 +15365,7 @@ mod tests {
     }
 
     #[test]
-    fn a_take_without_a_state_keeps_the_runners_own_build() {
+    fn a_take_without_a_state_writes_the_igt_and_the_bosses() {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(
@@ -15433,10 +15378,9 @@ mod tests {
             apply_fx(&fx),
             [
                 &Effect::SetIgt { ms: TEAM_IGT },
-                &Effect::ApplyRelayItems {
+                &Effect::ApplyRelayFlags {
                     handoff_id: "h1".to_string(),
                     generation: 1,
-                    items: vec![],
                     flags: vec![BOSS],
                     grace_flags: vec![],
                 }
@@ -15461,10 +15405,9 @@ mod tests {
             apply_fx(&fx),
             [
                 &Effect::SetIgt { ms: 0 },
-                &Effect::ApplyRelayItems {
+                &Effect::ApplyRelayFlags {
                     handoff_id: "h1".to_string(),
                     generation: 1,
-                    items: vec![],
                     flags: vec![],
                     grace_flags: vec![],
                 }
@@ -15503,24 +15446,28 @@ mod tests {
     }
 
     #[test]
-    fn an_implausible_state_skips_the_stat_write() {
+    fn a_take_writes_the_igt_and_the_flags_and_nothing_of_the_character() {
         let t0 = Instant::now();
         let mut m = receiver(t0);
-        let mut state = take_state();
-        state.level = 0;
-        receive(
-            &mut m,
-            t0,
-            take_msg("h1", Some(state), TEAM_IGT, &[BOSS, 999], Some(ZONE_WARP)),
-        );
+        receive(&mut m, t0, take("h1"));
         let fx = local(&mut m, t0, 1_100, chapel());
+        assert!(fx.iter().any(|e| matches!(e, Effect::SetIgt { .. })));
+        assert!(fx
+            .iter()
+            .any(|e| matches!(e, Effect::ApplyRelayFlags { .. })));
         assert_eq!(
-            apply_fx(&fx),
-            full_apply("h1", 1)[1..].iter().collect::<Vec<_>>()
+            fx.iter()
+                .filter(|e| matches!(
+                    e,
+                    Effect::SetGameFlag { .. }
+                        | Effect::SetIgt { .. }
+                        | Effect::ApplyRelayFlags { .. }
+                        | Effect::SendRelayReady { .. }
+                ))
+                .count(),
+            fx.len(),
+            "{fx:?}"
         );
-        applied(&mut m, t0, 1_150, "h1");
-        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
-        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
     }
 
     #[test]
@@ -15539,7 +15486,7 @@ mod tests {
                 take_msg("h1", Some(take_state()), written, &[BOSS], Some(ZONE_WARP)),
             );
             let fx = local(&mut m, t0, 1_100, chapel());
-            assert_eq!(apply_fx(&fx).len(), 3);
+            assert_eq!(apply_fx(&fx).len(), 2);
             // A loading screen at once over the written IGT, then its exit.
             let mut fx = Vec::new();
             for at in (1_200..=3_000).step_by(100) {
@@ -15620,7 +15567,7 @@ mod tests {
         assert!(!m.wants_status_update(t0 + ms(1_100), TEAM_IGT));
 
         let mut fx = local(&mut m, t0, 1_100, chapel());
-        assert_eq!(apply_fx(&fx).len(), 3, "{fx:?}");
+        assert_eq!(apply_fx(&fx).len(), 2, "{fx:?}");
         // A gate flag read meanwhile is left as the scan found it.
         let reads = || Some(vec![(ZONE_FLAG, true)]);
         fx.extend(rx_frame(
@@ -15812,7 +15759,7 @@ mod tests {
                 1_100
             } else {
                 let fx = local(&mut m, t0, 1_200, chapel());
-                assert_eq!(apply_fx(&fx).len(), 3, "it starts all the same");
+                assert_eq!(apply_fx(&fx).len(), 2, "it starts all the same");
                 1_200
             };
             let fx = team_over(&mut m, t0, written + 100, 8_000, chapel(), written);
@@ -15970,11 +15917,11 @@ mod tests {
         );
         let applies: Vec<&Effect> = fx
             .iter()
-            .filter(|(_, e)| matches!(e, Effect::ApplyRelayItems { .. }))
+            .filter(|(_, e)| matches!(e, Effect::ApplyRelayFlags { .. }))
             .map(|(_, e)| e)
             .collect();
         assert!(
-            matches!(applies[..], [Effect::ApplyRelayItems { handoff_id, .. }] if handoff_id == "h2"),
+            matches!(applies[..], [Effect::ApplyRelayFlags { handoff_id, .. }] if handoff_id == "h2"),
             "{fx:?}"
         );
     }
@@ -16209,7 +16156,7 @@ mod tests {
         assert_eq!(times_of(&fx, &lock(false)), [1_100 + abandon]);
         assert_eq!(
             m.get_status(t0 + ms(1_100 + abandon)),
-            Some("Baton taken: items may be missing")
+            Some("Baton taken: graces may be missing")
         );
         // Its late answer changes nothing.
         m.relay_state_applied(
@@ -16253,7 +16200,7 @@ mod tests {
             let frame = team(m, t0, now, chapel(), written);
             let started = frame
                 .iter()
-                .any(|e| matches!(e, Effect::ApplyRelayItems { .. }));
+                .any(|e| matches!(e, Effect::ApplyRelayFlags { .. }));
             fx.extend(frame.into_iter().map(|e| (now, e)));
             if started {
                 return (now, fx);
@@ -16278,7 +16225,6 @@ mod tests {
         receive(&mut m, t0, take("h1"));
         let fx = local(&mut m, t0, 1_100, chapel());
         let first = m.relay_apply.as_ref().unwrap().generation;
-        // The first start writes the plausible state's stats.
         assert_eq!(
             apply_fx(&fx),
             full_apply("h1", first).iter().collect::<Vec<_>>()
@@ -16303,18 +16249,11 @@ mod tests {
         );
         assert!(!m.wrong_save && m.triggered_flags.contains(&BOSS));
         // Started again on the first settled frame at the Chapel: the same
-        // take, its IGT and a new apply under a new generation, but not its
-        // stats (the runes a death dropped lie in the bloodstain: written
-        // again they would be doubled).
+        // take, its IGT and a new apply under a new generation.
         assert_eq!(restart, 3_200 + settle_ms(), "{fx:?}");
         assert_eq!(
             start_fx(&fx, restart),
-            full_apply("h1", first + 1)[1..].iter().collect::<Vec<_>>()
-        );
-        assert!(
-            !fx.iter()
-                .any(|(_, e)| matches!(e, Effect::WriteCharacterStats { .. })),
-            "{fx:?}"
+            full_apply("h1", first + 1).iter().collect::<Vec<_>>()
         );
         applied(&mut m, t0, restart + 50, "h1");
         let fx = team_over(
@@ -16329,7 +16268,7 @@ mod tests {
         assert!(!tagged_apply(&fx));
         assert_ne!(
             m.get_status(t0 + ms(restart + 100)),
-            Some("Baton taken: items may be missing")
+            Some("Baton taken: graces may be missing")
         );
     }
 
@@ -16347,9 +16286,7 @@ mod tests {
             assert_eq!(acks(&fx), 0, "{start}: {fx:?}");
             assert_eq!(
                 start_fx(&fx, restart),
-                full_apply("h1", first + start)[1..]
-                    .iter()
-                    .collect::<Vec<_>>(),
+                full_apply("h1", first + start).iter().collect::<Vec<_>>(),
                 "{start}"
             );
             written = restart;
@@ -16377,7 +16314,7 @@ mod tests {
         assert_eq!(acked, [exit + settle_ms()], "{fx:?}");
         assert_eq!(
             m.get_status(t0 + ms(acked[0])),
-            Some("Baton taken: items may be missing")
+            Some("Baton taken: graces may be missing")
         );
         assert!(!m.relay_take_pending());
     }
@@ -16437,7 +16374,7 @@ mod tests {
             assert!(!tagged_apply(&fx), "{end:?}: started once");
             assert_ne!(
                 m.get_status(t0 + ms(1_200)),
-                Some("Baton taken: items may be missing"),
+                Some("Baton taken: graces may be missing"),
                 "{end:?}"
             );
         }
@@ -16550,7 +16487,7 @@ mod tests {
         let fx = team_over(&mut m, t0, 1_200, 1_100 + abandon, chapel(), 1_100);
         let started: Vec<u64> = fx
             .iter()
-            .filter(|(_, e)| matches!(e, Effect::ApplyRelayItems { handoff_id, .. } if handoff_id == "h2"))
+            .filter(|(_, e)| matches!(e, Effect::ApplyRelayFlags { handoff_id, .. } if handoff_id == "h2"))
             .map(|(at, _)| *at)
             .collect();
         assert_eq!(started, [1_100 + abandon], "{fx:?}");

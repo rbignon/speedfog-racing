@@ -768,7 +768,7 @@ fn message_loop(
                 info!(
                     ?handoff_id,
                     igt_ms,
-                    items = state.items.len(),
+                    graces = state.grace_flags.len(),
                     "[WS] Sending: relay_state"
                 );
                 let msg = ClientMessage::RelayState {

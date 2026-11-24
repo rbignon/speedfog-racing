@@ -175,11 +175,6 @@ impl HeldInventory {
         &self.normal
     }
 
-    /// The key list's entries, its whole capacity in position order.
-    pub(super) fn key_entries(&self) -> &[u8] {
-        &self.key
-    }
-
     /// The key list's capacity, the inventory index of the normal list's
     /// first entry (`core::item_inventory::normal_index`).
     pub(super) fn key_capacity(&self) -> u32 {

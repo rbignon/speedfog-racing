@@ -50,7 +50,7 @@ pub const RELEASE_WINDOW: Duration = Duration::from_secs(15);
 /// answer is dropped. The same bound as the release's give-up.
 pub const CAPTURE_ABANDON: Duration = RELEASE_CAPTURE_TIMEOUT;
 /// After a capture failed, none is asked before this has passed: each one
-/// walks the inventory on the worker thread.
+/// scans the grace flags on the worker thread.
 pub const CAPTURE_RETRY: Duration = Duration::from_millis(500);
 
 /// After its `relay_taken`, the holder role a take gave outlives an update
@@ -65,9 +65,9 @@ pub const TAKEN_CONFIRM: Duration = Duration::from_secs(5);
 pub const APPLY_ABANDON: Duration = Duration::from_secs(20);
 /// Starts of one take at most: an apply a load cut (a death or a quit-out at
 /// the Chapel) puts its take back to `TakePhase::Received`, to be written
-/// again once loaded and settled at the Chapel, giving only what is still
-/// lacking; the apply that ends the last start is acknowledged however it
-/// ended, so a load at every start cannot hold a take for ever.
+/// again once loaded and settled at the Chapel; the apply that ends the last
+/// start is acknowledged however it ended, so a load at every start cannot
+/// hold a take for ever.
 pub const TAKE_STARTS_MAX: u32 = 3;
 
 /// A `relay_handoff_request` or `relay_take_request` the server has not
@@ -125,7 +125,7 @@ pub struct PendingTake {
     /// yet), `TAKE_STARTS_MAX` at most.
     pub starts: u32,
     /// A load cut the apply of its last start: its acknowledgement says
-    /// items may be missing.
+    /// graces may be missing.
     pub apply_cut: bool,
     pub phase: TakePhase,
 }

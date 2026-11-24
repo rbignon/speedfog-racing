@@ -577,16 +577,12 @@ pub enum CameraVariant {
     Unknown,
 }
 
-/// What a relay handoff carries of a character, in the order the game stores
-/// it: vigor, mind, endurance, strength, dexterity, intelligence, faith,
-/// arcane. The wire caps are 2^31 - 1 for attributes, level, runes and grace
-/// flags and 2^32 - 1 for an item id (raw id with its category nibble).
+/// What a relay handoff carries: the event flags of the lit graces, nothing
+/// of the character (each runner keeps their own). A state with other fields
+/// reads as its graces, the rest ignored. The wire caps a grace flag at
+/// 2^31 - 1 and a state at 1000 of them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CharacterState {
-    pub attributes: [u32; 8],
-    pub level: u32,
-    pub runes: u32,
-    pub items: Vec<u32>,
     pub grace_flags: Vec<u32>,
 }
 
@@ -2543,7 +2539,7 @@ mod tests {
       "members":[{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true,"ready":true,"validated":true},
                  {"participant_id":"p2","name":"Kahleeya","zones":3,"status":"playing","online":true,"ready":false,"validated":true}],
       "flags":{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000}}"#;
-    const RELAY_STATE: &str = r#"{"attributes":[40,20,25,30,14,9,9,7],"level":68,"runes":15230,"items":[1048576100,2147493648],"grace_flags":[71000,76101]}"#;
+    const RELAY_STATE: &str = r#"{"grace_flags":[71000,76101]}"#;
     const AUTH_OK_BASE: &str = r#""type":"auth_ok","participant_id":"abc-123",
         "race":{"id":"123","name":"Test Race","status":"setup"},
         "seed":{"total_layers":5},"participants":[]"#;
@@ -2584,10 +2580,7 @@ mod tests {
         else {
             panic!()
         };
-        let state = state.unwrap();
-        assert_eq!(state.attributes, [40, 20, 25, 30, 14, 9, 9, 7]);
-        // An item id keeps its category nibble: above i32::MAX.
-        assert_eq!(state.items, vec![1048576100, 2147493648]);
+        assert_eq!(state.unwrap().grace_flags, vec![71000, 76101]);
         assert_eq!(warp_flag, Some(1050290517));
         let bare: ServerMessage = serde_json::from_str(
             r#"{"type":"relay_take","handoff_id":"h1","state":null,"igt_ms":0,"defeat_flags":[],"warp_flag":null,"zone_name":null}"#,
@@ -2605,11 +2598,15 @@ mod tests {
     }
 
     #[test]
-    fn relay_state_accepts_the_wire_maxima() {
-        let json = r#"{"attributes":[2147483647,0,0,0,0,0,0,0],"level":2147483647,"runes":2147483647,"items":[4294967295],"grace_flags":[2147483647]}"#;
-        let st: CharacterState = serde_json::from_str(json).unwrap();
-        assert_eq!(st.items, vec![u32::MAX]);
-        assert_eq!(st.runes, i32::MAX as u32);
+    fn a_state_of_the_old_shape_reads_as_its_graces() {
+        let old = r#"{"attributes":[40,20,25,30,14,9,9,7],"level":68,"runes":15230,
+                      "items":[2000005,2147493648],"grace_flags":[71000,76101]}"#;
+        let state: CharacterState = serde_json::from_str(old).unwrap();
+        assert_eq!(state.grace_flags, vec![71000, 76101]);
+        assert_eq!(
+            serde_json::to_string(&state).unwrap(),
+            r#"{"grace_flags":[71000,76101]}"#
+        );
     }
 
     #[test]
@@ -2642,7 +2639,7 @@ mod tests {
             igt_ms: 7,
         });
         assert!(checkpoint.contains(r#""handoff_id":null"#));
-        assert!(checkpoint.contains(r#""attributes":[40,20,25,30,14,9,9,7]"#));
+        assert!(checkpoint.contains(r#""state":{"grace_flags":[71000,76101]}"#));
     }
 
     #[test]

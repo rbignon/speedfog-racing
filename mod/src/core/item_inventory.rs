@@ -77,27 +77,6 @@ pub fn quantity_in_entries(entries: &[u8], item_id: u32) -> u32 {
     })
 }
 
-/// The category nibble of an item id (weapon `0x0`, protector `0x1`,
-/// accessory `0x2`, goods `0x4`, gem `0x8`).
-pub fn category_nibble(item_id: u32) -> u32 {
-    item_id >> 28
-}
-
-/// Categories a held list can carry that a relay state cares about.
-const HELD_CATEGORIES: [u32; 5] = [0x0, 0x1, 0x2, 0x4, 0x8];
-
-/// The item id of every whole entry of `entries` whose category is a
-/// weapon, protector, accessory, goods or gem and whose quantity is above 0
-/// (the empty marker `0xFFFF_FFFF` and a spent stack are skipped; a trailing
-/// partial entry is ignored).
-pub fn held_item_ids(entries: &[u8]) -> impl Iterator<Item = u32> + '_ {
-    entries.chunks_exact(ENTRY_SIZE).filter_map(|entry| {
-        let id = field(entry, ENTRY_ITEM_ID_OFFSET);
-        (field(entry, ENTRY_QUANTITY_OFFSET) > 0 && HELD_CATEGORIES.contains(&category_nibble(id)))
-            .then_some(id)
-    })
-}
-
 /// First item id of the next category (protectors): every weapon id is
 /// below it.
 const WEAPON_ID_END: u32 = 0x1000_0000;
@@ -262,23 +241,6 @@ mod tests {
         let partial = entries(&[(GOODS, 5)]);
         list.extend_from_slice(&partial[..ENTRY_SIZE - 1]);
         assert_eq!(quantity_in_entries(&list, GOODS), 1);
-    }
-
-    #[test]
-    fn held_item_ids_skips_empty_entries() {
-        let list = entries(&[
-            (u32::MAX, 1),
-            (0x4000_0000 | 100, 0),
-            (0x3000_0001, 1),
-            (0x2000_0000 | 1000, 1),
-        ]);
-        assert_eq!(
-            held_item_ids(&list).collect::<Vec<_>>(),
-            vec![0x2000_0000 | 1000]
-        );
-        let mut partial = entries(&[(GOODS, 1)]);
-        partial.truncate(ENTRY_SIZE - 1);
-        assert_eq!(held_item_ids(&partial).count(), 0);
     }
 
     const CLUB: u32 = 11_010_000;

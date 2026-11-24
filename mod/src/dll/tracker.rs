@@ -270,12 +270,12 @@ enum RelayJob {
         handoff_id: Option<String>,
         generation: u64,
     },
-    /// `Effect::ApplyRelayItems`: its plan read on the worker thread, then
+    /// `Effect::ApplyRelayFlags`: its plan read on the worker thread, then
     /// its writes on the frame thread (`run_relay_apply`), answered by
     /// `RaceMachine::relay_state_applied` once they ended. It stays the
     /// running job until then, so a job asked meanwhile waits behind the
-    /// writes too (a capture never reads the inventory while it is given
-    /// to).
+    /// writes too (a capture never reads the graces while they are
+    /// raised).
     Apply {
         run: ApplyRun,
         request: ApplyRequest,
@@ -294,18 +294,17 @@ impl QueuedJob for RelayJob {
     }
 }
 
-/// What an apply's plan is made from (the take's state and defeat flags).
+/// What an apply's plan is made from (the take's defeat flags and its
+/// state's grace flags).
 struct ApplyRequest {
-    items: Vec<u32>,
     flags: Vec<u32>,
     grace_flags: Vec<u32>,
 }
 
 impl std::fmt::Debug for ApplyRequest {
-    /// The counts only: a state carries up to thousands of ids.
+    /// The counts only: a state carries up to a thousand flags.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ApplyRequest")
-            .field("items", &self.items.len())
             .field("flags", &self.flags.len())
             .field("grace_flags", &self.grace_flags.len())
             .finish()
@@ -378,7 +377,7 @@ pub struct RaceTracker {
     spawner_thread: Option<JoinHandle<()>>,
 
     // The relay worker's jobs: the one running and those waiting, one at a
-    // time so the character is never read by two jobs at once.
+    // time so the game is never read by two jobs at once.
     relay_jobs: JobQueue<RelayJob>,
     /// Test aid, read once at start: the interval between two writes of a
     /// relay apply (none: off, the normal batches).
@@ -942,38 +941,6 @@ impl RaceTracker {
                     handoff_id,
                     generation,
                 }),
-                Effect::WriteCharacterStats {
-                    attributes,
-                    level,
-                    runes,
-                } => {
-                    // Synchronous, on this frame: the machine reads the next
-                    // frame as written. A failed write fails no take.
-                    let before = relay::read_stats();
-                    if !relay::write_stats(attributes, level, runes) {
-                        warn!(
-                            ?before,
-                            ?attributes,
-                            level,
-                            runes,
-                            "[RELAY] Stats not written (unwritable, or what is there does not read as a character's stats)"
-                        );
-                    } else {
-                        let after = relay::read_stats();
-                        if after == Some((attributes, level, runes)) {
-                            info!(?before, ?attributes, level, runes, "[RELAY] Stats written");
-                        } else {
-                            warn!(
-                                ?before,
-                                ?after,
-                                ?attributes,
-                                level,
-                                runes,
-                                "[RELAY] Stats read back differ from the ones written"
-                            );
-                        }
-                    }
-                }
                 Effect::SetIgt { ms } => {
                     if self.game_state.write_igt(ms).is_some() {
                         info!(ms, "[RELAY] IGT written");
@@ -981,10 +948,9 @@ impl RaceTracker {
                         warn!(ms, "[RELAY] IGT not written (IGT unwritable)");
                     }
                 }
-                Effect::ApplyRelayItems {
+                Effect::ApplyRelayFlags {
                     handoff_id,
                     generation,
-                    items,
                     flags,
                     grace_flags,
                 } => {
@@ -999,11 +965,7 @@ impl RaceTracker {
                     run.set_min_interval(self.relay_slow_apply);
                     self.request_relay_job(RelayJob::Apply {
                         run,
-                        request: ApplyRequest {
-                            items,
-                            flags,
-                            grace_flags,
-                        },
+                        request: ApplyRequest { flags, grace_flags },
                     });
                 }
                 Effect::SendRelayTaken { handoff_id } => {
@@ -1682,14 +1644,12 @@ impl RaceTracker {
                 RelayJob::Apply { run, .. } if run.is_planned() => return,
                 RelayJob::Apply { run, request } => {
                     let generation = run.generation();
-                    let items = request.items.clone();
                     let flags = request.flags.clone();
                     let grace_flags = request.grace_flags.clone();
                     std::thread::Builder::new()
                         .name("relay-worker".to_string())
                         .spawn(move || {
                             RelayJobDone::Planned(relay::plan_apply(
-                                &items,
                                 &flags,
                                 &grace_flags,
                                 generation,

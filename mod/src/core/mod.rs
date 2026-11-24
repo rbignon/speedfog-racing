@@ -28,7 +28,6 @@ pub mod race_machine;
 pub mod relay;
 pub mod relay_apply;
 pub mod relay_capture;
-pub mod relay_items;
 pub mod relay_menu;
 pub mod relay_view;
 pub mod talisman_thief;
