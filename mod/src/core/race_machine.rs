@@ -887,8 +887,10 @@ pub struct RaceMachine {
     /// save's on the exit frame (its first read after the load, which the
     /// settled read may overturn). A read that lifts that verdict with no
     /// load since lets it go: the next frame, whose flags were read for it,
-    /// makes it as the exit would have. A load drops it, its deferred flags
-    /// parked as the exit would have parked them.
+    /// makes it as the exit would have. A load, or a lift that is no read
+    /// (the token no longer judged), drops it, its deferred flags parked as
+    /// the exit would have parked them (`drop_held_exit`). Only an exit made
+    /// while connected is held.
     relay_exit_held: Option<HeldExit>,
     /// The relay team's boss loot waiting for a frame that may give it
     /// (`maintain_relay_loot`), one entry per boss flag; dropped when the
@@ -1880,10 +1882,17 @@ impl RaceMachine {
             self.relay_checkpoint_due = false;
             self.relay_passed = None;
             self.relay_passed_banner = None;
-            // No relay, no token to be wrong about.
+            // No relay, no token to be wrong about. A held exit report was
+            // the other save's: no read of the runner's token lifted it.
             if self.relay_wrong_token {
                 self.relay_wrong_token = false;
                 info!("[RELAY] No relay any more, wrong save lifted");
+                if let Some(parked) = self.drop_held_exit() {
+                    info!(
+                        parked,
+                        "[RELAY] Held loading exit dropped, the token no longer judged"
+                    );
+                }
             }
         }
         let named = relay.as_ref().and_then(|r| r.holder_id.as_deref());
@@ -2066,6 +2075,22 @@ impl RaceMachine {
                 self.clear_igt_references();
             }
         }
+    }
+
+    /// Drop the loading exit report the relay token held back
+    /// (`relay_exit_held`) when its wait ends otherwise than by a read of the
+    /// runner's token (a load, the token no longer judged): its deferred
+    /// flags parked for the next reconnection, as that exit would have
+    /// parked them on a wrong save, or cleared once the run is over for the
+    /// runner. How many were parked; `None` when no report was held.
+    fn drop_held_exit(&mut self) -> Option<usize> {
+        self.relay_exit_held.take()?;
+        Some(if self.is_race_running() && !self.am_i_finished() {
+            self.flag_buffer.park_deferred()
+        } else {
+            self.flag_buffer.clear_deferred();
+            0
+        })
     }
 
     /// Forget what the IGT guards compare a reading against, so the next
@@ -3853,16 +3878,10 @@ impl RaceMachine {
         let loading_exit = position_readable && !self.was_position_readable;
         // The report of an exit the relay token held back (`relay_exit_held`):
         // made below, as that exit would have made it, on the first frame
-        // that starts and stays on the race save; dropped by a load, its
-        // deferred flags parked as that exit would have parked them.
+        // that starts and stays on the race save; dropped by a load
+        // (`drop_held_exit`).
         let held_exit = if !position_readable {
-            if self.relay_exit_held.take().is_some() {
-                let parked = if self.is_race_running() && !self.am_i_finished() {
-                    self.flag_buffer.park_deferred()
-                } else {
-                    self.flag_buffer.clear_deferred();
-                    0
-                };
+            if let Some(parked) = self.drop_held_exit() {
                 info!(parked, "[RELAY] Held loading exit dropped by a load");
             }
             None
@@ -4061,11 +4080,14 @@ impl RaceMachine {
                         effects.push(Effect::ClearWarpCapture);
                     }
                 }
-            } else if loading_exit && self.relay_wrong_token && !self.wrong_save {
+            } else if loading_exit && input.connected && self.relay_wrong_token && !self.wrong_save
+            {
                 // The relay token alone reads this save as another's: the
                 // settled read may still find the runner's with no load
                 // between, so the report waits for it rather than being
-                // parked or dropped. A fog exit owes no zone query.
+                // parked or dropped. A fog exit owes no zone query. Only
+                // while connected: disconnected, the deferred flags are
+                // parked below, for the reconnection to carry.
                 let fog = self.flag_buffer.has_deferred();
                 info!(
                     deferred = fog,
@@ -5097,6 +5119,14 @@ impl RaceMachine {
             if self.relay_wrong_token && lifted {
                 self.relay_wrong_token = false;
                 info!(live, "[RELAY] Token no longer judged, wrong save lifted");
+                // No read of the runner's token lifted it: a held exit
+                // report was the other save's.
+                if let Some(parked) = self.drop_held_exit() {
+                    info!(
+                        parked,
+                        "[RELAY] Held loading exit dropped, the token no longer judged"
+                    );
+                }
             }
             return;
         };
@@ -19676,9 +19706,9 @@ mod tests {
         }
     }
 
-    /// A frame in a zone as the shell makes it: the token flags reading
-    /// `read`; the event flags read only when the machine asks for them
-    /// (`wants_flag_reads`), the zone flag reading `*gate` until a write
+    /// A connected frame in a zone as the shell makes it: the token flags
+    /// reading `read`; the event flags read only when the machine asks for
+    /// them (`wants_flag_reads`), the zone flag reading `*gate` until a write
     /// clears it; the position read only on a loading exit.
     fn zone_frame(
         m: &mut RaceMachine,
@@ -19687,12 +19717,24 @@ mod tests {
         read: Option<u32>,
         gate: &mut bool,
     ) -> Vec<Effect> {
-        let needs = m.pre_tick(t0 + ms(at), true, true);
+        zone_frame_on(m, t0, at, read, gate, true)
+    }
+
+    /// `zone_frame`, `connected` or not.
+    fn zone_frame_on(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        read: Option<u32>,
+        gate: &mut bool,
+        connected: bool,
+    ) -> Vec<Effect> {
+        let needs = m.pre_tick(t0 + ms(at), true, connected);
         let reads = m
-            .wants_flag_reads(needs, true, true)
+            .wants_flag_reads(needs, true, connected)
             .then(|| vec![(ZONE_FLAG, *gate)]);
         let snapshot = with_token(go_snapshot(at, Some(IN_ZONE)), read);
-        let mut input = tick_in(snapshot, true, reads);
+        let mut input = tick_in(snapshot, connected, reads);
         if !m.was_position_readable {
             input.position = Some(PlayerPosition::new(IN_ZONE, 1.0, 2.0, 3.0, None));
         }
@@ -19900,6 +19942,71 @@ mod tests {
         assert!(flags_sent(&fx).is_empty(), "{fx:?}");
         reconnect_token(&mut m, t0, back + 5_100, "holder");
         let fx = zone_frame(&mut m, t0, back + 5_116, Some(TOKEN), &mut gate);
+        assert_eq!(flags_sent(&fx), [(ZONE_FLAG, 6_100)], "{fx:?}");
+    }
+
+    #[test]
+    fn an_exit_held_on_another_save_is_dropped_when_the_relay_ends() {
+        // Every lift of the wrong token that is no read of the runner's.
+        for end in ["team finished", "member out", "no relay", "token gone"] {
+            let t0 = Instant::now();
+            let mut m = token_holder(t0);
+            // A gate's flag deferred, then another character: the exit held.
+            let mut gate = true;
+            zone_frame(&mut m, t0, 1_100, Some(TOKEN), &mut gate);
+            go(&mut m, t0, 1_200, None);
+            let exit = 1_216;
+            let mut fx = zone_frame(&mut m, t0, exit, Some(TOKEN + 1), &mut gate);
+            assert!(m.relay_wrong_token && m.relay_exit_held.is_some(), "{end}");
+            let mut info = token_info("holder", Some(TOKEN), true);
+            match end {
+                "team finished" => info.team_status = ParticipantStatus::Finished,
+                "member out" => set_member_status(&mut info, "p1", ParticipantStatus::Abandoned),
+                "token gone" => info.token = None,
+                _ => {}
+            }
+            if end == "no relay" {
+                m.handle_message(relay_auth("running", None), t0 + ms(1_250));
+            } else {
+                update(&mut m, info, t0, 1_250);
+            }
+            for at in (exit + 100..=exit + settle_ms() + 3_000).step_by(100) {
+                fx.extend(zone_frame(&mut m, t0, at, Some(TOKEN + 1), &mut gate));
+            }
+            assert!(!m.relay_wrong_token, "{end}");
+            // Nothing of that exit is sent, nor left for the next exit.
+            assert!(m.relay_exit_held.is_none(), "{end}");
+            assert!(!m.flag_buffer.has_deferred(), "{end}");
+            assert!(
+                flags_sent(&fx).is_empty() && zone_queries(&fx).is_empty(),
+                "{end}: {fx:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_exit_on_another_save_while_disconnected_parks_its_flags_and_holds_nothing() {
+        let t0 = Instant::now();
+        let mut m = token_holder(t0);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(1_050),
+        );
+        // A gate's flag deferred while the socket is down, then another
+        // character.
+        let mut gate = true;
+        zone_frame_on(&mut m, t0, 1_100, Some(TOKEN), &mut gate, false);
+        assert!(!gate);
+        m.tick(
+            tick_in(go_snapshot(1_200, None), false, None),
+            t0 + ms(1_200),
+        );
+        zone_frame_on(&mut m, t0, 1_216, Some(TOKEN + 1), &mut gate, false);
+        assert!(m.relay_wrong_token);
+        assert!(m.relay_exit_held.is_none());
+        // Parked: the reconnection carries the flag, the save still wrong.
+        reconnect_token(&mut m, t0, 1_300, "holder");
+        let fx = zone_frame(&mut m, t0, 1_316, Some(TOKEN + 1), &mut gate);
         assert_eq!(flags_sent(&fx), [(ZONE_FLAG, 6_100)], "{fx:?}");
     }
 
