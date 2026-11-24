@@ -320,7 +320,9 @@ def test_next_gate_steps_one_layer_then_the_final_boss() -> None:
 
 def test_parse_team_rejects_what_a_run_cannot_use() -> None:
     assert parse_team("Alpha=a,b") == ("Alpha", ["a", "b"])
-    for bad in ("Alpha", "=a,b", "Alpha=a", "Alpha=a,a", "Alpha=a,"):
+    # A team of one bot, which players joining from the web complete.
+    assert parse_team("Alpha=a") == ("Alpha", ["a"])
+    for bad in ("Alpha", "Alpha=", "=a,b", "Alpha=a,a", "Alpha=a,"):
         with pytest.raises(ValueError):
             parse_team(bad)
 

@@ -56,6 +56,9 @@ a server reload) connects again.
 Usage:
     cd server && uv run python ../tools/relay_bot.py <race_id> \\
         --team Alpha=bot1,bot2 --team Beta=bot3,bot4 [--state state.json]
+
+A --team names one bot or more (`--team Alpha=bot1` for a team of you and
+bot1): players joining that team from the web complete it.
 """
 
 from __future__ import annotations
@@ -346,12 +349,14 @@ def finish_warning(graph: dict[str, Any], node: str) -> str | None:
 
 
 def parse_team(spec: str) -> tuple[str, list[str]]:
-    """``NAME=BOT,BOT`` into the team name and its bots (2 or more, distinct)."""
+    """``NAME=BOT[,BOT...]`` into the team name and its bots (1 or more,
+    distinct): a team of one bot is completed by players joining it from the
+    web."""
     name, sep, rest = spec.partition("=")
     bots = [b for b in rest.split(",")] if sep else []
-    if not name.strip() or len(bots) < 2 or "" in bots or len(set(bots)) != len(bots):
+    if not name.strip() or not bots or "" in bots or len(set(bots)) != len(bots):
         raise ValueError(
-            f"--team wants NAME=BOT,BOT (two or more distinct bots): {spec!r}"
+            f"--team wants NAME=BOT[,BOT...] (one or more distinct bots): {spec!r}"
         )
     return name.strip(), bots
 
@@ -857,7 +862,8 @@ def main() -> None:
         "--team",
         action="append",
         required=True,
-        help="NAME=BOT,BOT: a team and its bots (local usernames); repeat for more teams",
+        help="NAME=BOT[,BOT...]: a team and its bots (local usernames, one or more: "
+        "players joining it from the web complete it); repeat for more teams",
     )
     parser.add_argument(
         "--ws", default="ws://localhost:8000", help="the server's WebSocket"
