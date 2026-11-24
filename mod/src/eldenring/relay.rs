@@ -1,15 +1,18 @@
 //! Relay race game access for the shell: the capture of what a handoff
 //! carries (the graces lit), the apply of a take (the plan of the flags to
-//! raise, the flag raises), and the read of the save's token. The capture
-//! and the plan read on the shell's relay worker thread, never on the
-//! tracker's frame thread nor per frame; the writes are made on the
-//! tracker's frame thread (the Present hook, not the game's own threads),
-//! `step_writer` a bounded batch per frame. The token is read on the frame
-//! thread, on the frames the machine asks for it only (`read_token`), and
-//! written there too (`write_token`), its flags and values never logged. What
-//! the reads must pass, what a state holds, what an apply writes and what a
-//! token read means is decided in `core::relay_capture`,
-//! `core::relay_apply` and `core::relay_token`.
+//! raise, the flag raises), the read of the save's token, and the give of
+//! the team's boss loot. The capture and the plan read on the shell's relay
+//! worker thread, never on the tracker's frame thread nor per frame; the
+//! writes are made on the tracker's frame thread (the Present hook, not the
+//! game's own threads), `step_writer` a bounded batch per frame. The token is
+//! read on the frame thread, on the frames the machine asks for it only
+//! (`read_token`), and written there too (`write_token`), its flags and
+//! values never logged. A loot entry is read and given on the frame thread,
+//! one entry on a frame the machine hands it out (`apply_loot`). What the
+//! reads must pass, what a state holds, what an apply writes, what a token
+//! read means and what a loot entry needs is decided in
+//! `core::relay_capture`, `core::relay_apply`, `core::relay_token` and
+//! `core::relay_loot`.
 //!
 //! ### Sources
 //!
@@ -21,6 +24,10 @@
 //! - Token: the token flags through `EventFlagReader::is_flag_set_fast` and
 //!   `set_flag_cached`, on their category page resolved once per read or
 //!   write.
+//! - Loot: its flags through `EventFlagReader::is_flag_set` and `set_flag`
+//!   (they sit in several categories), its items through
+//!   `item_spawner::inject_one`, its runes through
+//!   `sp_effect_apply::apply_speffect`.
 //!
 //! ### Reading off the frame thread
 //!
@@ -52,12 +59,13 @@ use std::time::Instant;
 use libeldenring::params::{BonfireWarpParam, PARAMS};
 use tracing::{info, warn};
 
-use super::{EventFlagReader, FlagReaderStatus, GameState};
-use crate::core::protocol::CharacterState;
+use super::{item_spawner, sp_effect_apply, EventFlagReader, FlagReaderStatus, GameState};
+use crate::core::protocol::{CharacterState, RelayLootEntry};
 use crate::core::relay_apply::{self, ApplyPlan, ApplyStep};
 use crate::core::relay_capture::{
     build_state, grace_flag_ids, lit_flags, no_load_between, CaptureFailure,
 };
+use crate::core::relay_loot::{self, LootOutcome};
 use crate::core::relay_token;
 use crate::profile_span;
 
@@ -237,6 +245,48 @@ pub fn write_token(reader: &EventFlagReader, flags: &[(u32, bool)]) -> usize {
         .iter()
         .filter(|&&(flag, value)| !reader.set_flag_cached(flag, value, page.as_ref()))
         .count()
+}
+
+/// Give one entry of the team's boss loot, on the tracker's frame thread, on
+/// the frame the machine handed it out: read the flags
+/// `core::relay_loot::decide` needs (the received flag, unless `paid` the
+/// boss's defeat flag, and the pickup flags only when that one is up), then
+/// carry out what it decides (`core::relay_loot::carry_out`): the items given
+/// one unit at a time through the item spawner, the rune effect through the
+/// SpEffect apply function, the flags raised through the event flag reader.
+/// A flag that cannot be raised is warned, with its id. `Unreadable` when a
+/// flag it needs does not read.
+pub fn apply_loot(reader: &EventFlagReader, entry: &RelayLootEntry, paid: bool) -> LootOutcome {
+    profile_span!("relay.apply_loot");
+    let received = reader.is_flag_set(entry.received_flag);
+    let defeated = (received == Some(false) && !paid)
+        .then(|| reader.is_flag_set(entry.flag))
+        .flatten();
+    let pickups: Vec<Option<bool>> = if defeated == Some(true) {
+        entry
+            .pickup_flags
+            .iter()
+            .map(|&flag| reader.is_flag_set(flag))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let Some(action) = relay_loot::decide(received, paid, defeated, &pickups) else {
+        return LootOutcome::Unreadable;
+    };
+    relay_loot::carry_out(
+        action,
+        entry,
+        item_spawner::inject_one,
+        sp_effect_apply::apply_speffect,
+        |flag| {
+            let raised = reader.set_flag(flag, true);
+            if !raised {
+                warn!(flag, "[RELAY] Loot flag not raised");
+            }
+            raised
+        },
+    )
 }
 
 /// The writer of an apply's steps for one frame, on the tracker's frame

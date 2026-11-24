@@ -33,6 +33,7 @@ use crate::core::relay::{
 };
 use crate::core::relay_apply::ApplyEnd;
 use crate::core::relay_capture;
+use crate::core::relay_loot::{self, LootOutcome, LootQueue};
 use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
 use crate::core::relay_token::{self, Verdict};
 use crate::core::relay_view::{self, RelayView, WaitBanner};
@@ -402,6 +403,16 @@ pub enum Effect {
     /// Send `relay_taken`: the take is applied and its warp flag raised.
     SendRelayTaken {
         handoff_id: String,
+    },
+    /// Give one entry of the relay team's boss loot on this frame
+    /// (`core::relay_loot`): read its flags in the save, carry out what
+    /// `relay_loot::decide` makes of them. Contract with the shell: it
+    /// answers on the same pass, on the tracker's frame thread, with
+    /// `RaceMachine::relay_loot_result`, handing the entry and `paid` back
+    /// with the outcome, `Unreadable` when it could not even try.
+    ApplyRelayLoot {
+        entry: RelayLootEntry,
+        paid: bool,
     },
     /// The holder confirmed a teammate in the baton menu: send
     /// `relay_handoff_request`.
@@ -879,6 +890,11 @@ pub struct RaceMachine {
     /// makes it as the exit would have. A load drops it, its deferred flags
     /// parked as the exit would have parked them.
     relay_exit_held: Option<HeldExit>,
+    /// The relay team's boss loot waiting for a frame that may give it
+    /// (`maintain_relay_loot`), one entry per boss flag; dropped when the
+    /// runner's relay is over, there is no relay any more, the race stops
+    /// running (a reset included) or another participant authenticates.
+    relay_loot: LootQueue,
     /// The Hunter sent after this runner (`maintain_hunter`).
     hunter: Hunter,
     /// The text of the reminder row his `Found` added: the row goes when he
@@ -1102,6 +1118,7 @@ impl RaceMachine {
             relay_bound_sent: None,
             relay_token_unfit: false,
             relay_exit_held: None,
+            relay_loot: LootQueue::default(),
             hunter: Hunter::default(),
             hunter_row: None,
             last_loading_exit: None,
@@ -2077,6 +2094,27 @@ impl RaceMachine {
         }
     }
 
+    /// Drop the loot waiting to be given once there is no relay any more,
+    /// the runner's relay is over or the race stops running (a race reset
+    /// included: it was the voided run's). After every message: one
+    /// comparison while nothing waits.
+    fn relay_loot_follows_race(&mut self) {
+        if self.relay_loot.is_empty() {
+            return;
+        }
+        let reason = if self.relay.is_none() {
+            "no relay"
+        } else if self.relay_over() {
+            "relay over"
+        } else if !self.is_race_running() {
+            "race not running"
+        } else {
+            return;
+        };
+        info!(reason, "[RELAY] Waiting loot dropped");
+        self.relay_loot.clear();
+    }
+
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
         let idx = self.my_participant_index?;
         self.race_state.participants.get(idx)
@@ -2289,8 +2327,10 @@ impl RaceMachine {
     pub fn handle_message(&mut self, msg: MachineMessage, now: Instant) -> Vec<Effect> {
         let mut effects = self.handle_message_inner(msg, now);
         // A take ends with the runner's relay or the race, whatever message
-        // said so (a relay update, a race status, an auth_ok, a race info).
+        // said so (a relay update, a race status, an auth_ok, a race info),
+        // and so does the loot waiting to be given.
         self.relay_take_follows_race();
+        self.relay_loot_follows_race();
         // An auth_ok names the participant: restored flags may go now.
         self.release_restored_flags(now);
         // After the release, so the depths it records reach LiveSplit now.
@@ -2401,6 +2441,9 @@ impl RaceMachine {
                     self.pending_item_effects.clear();
                     self.handled_grants.clear();
                     self.drop_hunter("another participant", &mut effects);
+                    // Its relay team's loot too: the list of this one's
+                    // follows its auth_ok.
+                    self.relay_loot.clear();
                 }
                 self.my_participant_id = Some(participant_id);
                 self.relay_ready_sent = None;
@@ -3171,8 +3214,44 @@ impl RaceMachine {
                 self.relay_request = None;
                 self.set_status(message, now);
             }
-            MachineMessage::RelayLoot { entries, paid, .. } => {
-                debug!(entries = entries.len(), paid, "[RELAY] Loot received");
+            MachineMessage::RelayLoot {
+                entries,
+                paid,
+                announce,
+            } => {
+                self.last_received_debug =
+                    Some(format!("relay_loot({}, paid={paid})", entries.len()));
+                let line = announce.map(|a| format!("{} defeated {}", a.runner, a.boss));
+                // Kept as a take is: while a relay is being run for the
+                // runner (an unknown team status holds the entries, the
+                // frame that gives them waits for a live relay).
+                let queued = self.relay.is_some() && !self.relay_over() && self.is_race_running();
+                info!(
+                    entries = entries.len(),
+                    paid,
+                    announce = line.as_deref().unwrap_or("none"),
+                    queued,
+                    "[RELAY] Loot received"
+                );
+                if queued {
+                    for entry in entries {
+                        self.relay_loot.push(entry, paid, now);
+                    }
+                    // A teammate's kill, announced live: the killer has the
+                    // game's own banner, a list after a connection none.
+                    if let Some(line) = line.filter(|_| !paid) {
+                        self.item_feed.push_banner(
+                            FeedBanner {
+                                icon: String::new(),
+                                title: "BOSS DEFEATED".to_string(),
+                                line,
+                                detail: String::new(),
+                                tone: FeedTone::Gain,
+                            },
+                            now,
+                        );
+                    }
+                }
             }
             MachineMessage::ItemNotice { banner } => {
                 self.last_received_debug = Some("item_notice".to_string());
@@ -4149,6 +4228,7 @@ impl RaceMachine {
             self.maintain_hunter(now, &mut effects);
             self.relay_link_lost();
             self.maintain_relay(false, loading_exit, held, now, &mut effects);
+            self.maintain_relay_loot(now, &mut effects);
             self.maintain_relay_key(relay_key_down, relay_key_cancel, false, now, &mut effects);
             return effects;
         }
@@ -4287,6 +4367,7 @@ impl RaceMachine {
         self.maintain_memory_effects(loading_exit, now, &mut effects);
         self.maintain_hunter(now, &mut effects);
         self.maintain_relay(true, loading_exit, held, now, &mut effects);
+        self.maintain_relay_loot(now, &mut effects);
         self.maintain_relay_key(relay_key_down, relay_key_cancel, true, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
@@ -5742,6 +5823,94 @@ impl RaceMachine {
                 handoff_id,
                 elapsed_ms, "[RELAY] Apply answered for a take no longer in progress"
             ),
+        }
+    }
+
+    /// Hand the shell the next entry of the relay team's boss loot, after
+    /// `maintain_relay`: one entry per frame, on a loaded frame of the race
+    /// save (`save_ok`), past the settle, whose token a read on a settled
+    /// frame found to be the runner's (`Good` or `Confirm`: no loot lands on
+    /// a save that is not validated, while `save_ok` also holds before a
+    /// token is drawn), while the relay is live for the runner and no take's
+    /// apply is in flight (between its start and its answer). The entry moves
+    /// out of the queue into the effect, which the shell answers on the same
+    /// pass (`relay_loot_result`): no state waits on that answer. One
+    /// emptiness check while nothing waits.
+    fn maintain_relay_loot(&mut self, now: Instant, effects: &mut Vec<Effect>) {
+        if self.relay_loot.is_empty() {
+            return;
+        }
+        crate::profile_span!("relay_loot");
+        let due = self.relay_live()
+            && self.frame_snapshot.position_readable
+            && self.save_ok()
+            && self.relay_settled(now)
+            && self.relay_token_settled
+            && matches!(
+                self.relay_token_verdict,
+                Some(Verdict::Good | Verdict::Confirm)
+            )
+            && self.relay_apply.is_none();
+        if !due {
+            return;
+        }
+        if let Some((entry, paid)) = self.relay_loot.next(now) {
+            effects.push(Effect::ApplyRelayLoot { entry, paid });
+        }
+    }
+
+    /// The shell's answer to `Effect::ApplyRelayLoot`, on the pass that
+    /// executed it, with the entry and its `paid` back and what became of
+    /// it, which is logged. An entry nothing was done to (`Unreadable`: a
+    /// flag that did not read, a give the game could not take) waits
+    /// `relay_loot::LOOT_RETRY` in the queue, behind the others, and is
+    /// dropped once its tries are spent: the list of the next `auth_ok`
+    /// brings it back.
+    pub fn relay_loot_result(
+        &mut self,
+        entry: RelayLootEntry,
+        paid: bool,
+        outcome: LootOutcome,
+        now: Instant,
+    ) {
+        let flag = entry.flag;
+        match outcome {
+            LootOutcome::AlreadyReceived => debug!(flag, "[RELAY] Loot already received"),
+            LootOutcome::Marked => info!(
+                flag,
+                why = if paid { "paid" } else { "awarded" },
+                "[RELAY] Loot marked"
+            ),
+            LootOutcome::Given {
+                units,
+                failed,
+                cut,
+                rune_refused,
+            } => {
+                let runes = entry.runes;
+                if failed > 0 || rune_refused || cut > 0 {
+                    warn!(
+                        flag,
+                        units, failed, runes, rune_refused, cut, "[RELAY] Loot given"
+                    );
+                } else {
+                    info!(
+                        flag,
+                        units, failed, runes, rune_refused, cut, "[RELAY] Loot given"
+                    );
+                }
+            }
+            LootOutcome::Unreadable => {
+                if self.relay_loot.retry(entry, paid, now) {
+                    debug!(flag, "[RELAY] Loot not readable, later");
+                } else {
+                    warn!(
+                        flag,
+                        tries = relay_loot::LOOT_TRIES_MAX,
+                        "[RELAY] Loot dropped"
+                    );
+                }
+            }
         }
     }
 
@@ -19732,5 +19901,338 @@ mod tests {
         reconnect_token(&mut m, t0, back + 5_100, "holder");
         let fx = zone_frame(&mut m, t0, back + 5_116, Some(TOKEN), &mut gate);
         assert_eq!(flags_sent(&fx), [(ZONE_FLAG, 6_100)], "{fx:?}");
+    }
+
+    // ------------------------------------------------------------------
+    // Boss loot
+    // ------------------------------------------------------------------
+
+    /// Three bosses of the team.
+    const GODRICK: u32 = 10000800;
+    const MARGIT: u32 = 10000850;
+    const RENNALA: u32 = 14000800;
+
+    /// The shell's answer of an entry given whole.
+    const GIVEN: LootOutcome = LootOutcome::Given {
+        units: 1,
+        failed: 0,
+        cut: 0,
+        rune_refused: false,
+    };
+
+    /// The entry of boss `flag`: an item, a rune effect, a pickup flag.
+    fn loot_entry(flag: u32) -> RelayLootEntry {
+        RelayLootEntry {
+            flag,
+            received_flag: 1_050_297_000 + flag % 100,
+            pickup_flags: vec![510_060],
+            items: vec![crate::core::protocol::RelayLootItem {
+                id: 0x4000_0000 | (flag % 1000),
+                qty: 1,
+            }],
+            rune_speffect: Some(755_891_000 + flag % 100),
+            runes: 13_000,
+        }
+    }
+
+    /// A `relay_loot` of the entries of `flags`, in their order, with
+    /// `announce` as `(runner, boss)`.
+    fn loot_msg(flags: &[u32], paid: bool, announce: Option<(&str, &str)>) -> MachineMessage {
+        MachineMessage::RelayLoot {
+            entries: flags.iter().map(|&flag| loot_entry(flag)).collect(),
+            paid,
+            announce: announce.map(|(runner, boss)| RelayLootAnnounce {
+                runner: runner.to_string(),
+                boss: boss.to_string(),
+            }),
+        }
+    }
+
+    /// The entries `fx` hands to the shell: their flag and `paid`.
+    fn loot_asked(fx: &[Effect]) -> Vec<(u32, bool)> {
+        fx.iter()
+            .filter_map(|e| match e {
+                Effect::ApplyRelayLoot { entry, paid } => Some((entry.flag, *paid)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The shell's answer to every loot effect of `fx`, on its pass.
+    fn answer_loot(m: &mut RaceMachine, fx: &[Effect], outcome: LootOutcome, at: Instant) {
+        for e in fx {
+            if let Effect::ApplyRelayLoot { entry, paid } = e {
+                m.relay_loot_result(entry.clone(), *paid, outcome, at);
+            }
+        }
+    }
+
+    /// `go_token`, each entry the frame hands to the shell given whole.
+    fn loot_frame(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        read: Option<u32>,
+    ) -> Vec<Effect> {
+        let fx = go_token(m, t0, at, map, read);
+        answer_loot(m, &fx, GIVEN, t0 + ms(at));
+        fx
+    }
+
+    /// A waiting runner bound to its token, loaded at the Roundtable Hold
+    /// on its save, the token read there (settled: no load since the start).
+    fn loot_machine(t0: Instant) -> RaceMachine {
+        let mut m = token_machine("waiting", true, t0);
+        go_token(&mut m, t0, 0, roundtable(), Some(TOKEN));
+        m
+    }
+
+    #[test]
+    fn loot_is_applied_one_entry_per_loaded_frame() {
+        let t0 = Instant::now();
+        let mut m = loot_machine(t0);
+        m.handle_message(
+            loot_msg(&[GODRICK, MARGIT, RENNALA], false, None),
+            t0 + ms(50),
+        );
+        let asked: Vec<_> = [100, 200, 300, 400]
+            .into_iter()
+            .map(|at| loot_asked(&loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN))))
+            .collect();
+        assert_eq!(
+            asked,
+            [
+                vec![(GODRICK, false)],
+                vec![(MARGIT, false)],
+                vec![(RENNALA, false)],
+                vec![]
+            ]
+        );
+    }
+
+    #[test]
+    fn loot_waits_for_a_loaded_settled_frame_of_the_right_save() {
+        let t0 = Instant::now();
+        let mut m = loot_machine(t0);
+        // Received during a load.
+        go(&mut m, t0, 100, None);
+        m.handle_message(loot_msg(&[GODRICK], false, None), t0 + ms(150));
+        let mut fx = go(&mut m, t0, 200, None);
+        // The load ends on another character: nothing, settled or not.
+        let exit = 216;
+        for at in (exit..=exit + settle_ms() + 3_000).step_by(100) {
+            fx.extend(loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN + 1)));
+        }
+        assert!(m.relay_wrong_token);
+        assert!(loot_asked(&fx).is_empty(), "{fx:?}");
+        // The member's save back: nothing before its settle, then the entry.
+        let back = exit + settle_ms() + 3_100;
+        go(&mut m, t0, back, None);
+        let exit = back + 16;
+        let mut fx = Vec::new();
+        for at in (exit..exit + settle_ms()).step_by(100) {
+            fx.extend(loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        assert!(loot_asked(&fx).is_empty(), "{fx:?}");
+        let fx = loot_frame(&mut m, t0, exit + settle_ms(), roundtable(), Some(TOKEN));
+        assert_eq!(loot_asked(&fx), [(GODRICK, false)]);
+    }
+
+    #[test]
+    fn loot_received_before_the_save_is_validated_waits_for_the_token() {
+        let t0 = Instant::now();
+        // A late member: no token drawn yet, the whole list at its auth_ok.
+        let mut m = relay_machine("waiting", t0);
+        go(&mut m, t0, 0, roundtable());
+        m.handle_message(loot_msg(&[GODRICK, MARGIT], false, None), t0 + ms(50));
+        let mut fx = Vec::new();
+        for at in (100..=10_000).step_by(100) {
+            fx.extend(loot_frame(&mut m, t0, at, roundtable(), Some(0)));
+        }
+        assert!(loot_asked(&fx).is_empty(), "{fx:?}");
+        // Its save validated: the token written into the save, read back,
+        // then the entries, none lost to the wait.
+        update(
+            &mut m,
+            token_info("waiting", Some(TOKEN), false),
+            t0,
+            10_050,
+        );
+        let mut read = Some(0);
+        let mut written = None;
+        let mut asked = Vec::new();
+        for at in (10_100..=12_000).step_by(100) {
+            let fx = loot_frame(&mut m, t0, at, roundtable(), read);
+            if !token_writes(&fx).is_empty() {
+                written = Some(at);
+                read = Some(TOKEN);
+            }
+            asked.extend(loot_asked(&fx).into_iter().map(|a| (at, a)));
+        }
+        let written = written.expect("the token is written");
+        assert_eq!(
+            asked,
+            [
+                (written + 100, (GODRICK, false)),
+                (written + 200, (MARGIT, false))
+            ]
+        );
+    }
+
+    #[test]
+    fn loot_waits_while_a_take_is_written() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", true, t0);
+        let mut fx = Vec::new();
+        for at in (0..=700).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        assert!(fx.contains(&ready(true)), "{fx:?}");
+        m.handle_message(take("h1"), t0 + ms(800));
+        update(&mut m, token_info("holder", Some(TOKEN), true), t0, 800);
+        let fx = go_token(&mut m, t0, 900, roundtable(), Some(TOKEN));
+        assert_eq!(apply_fx(&fx).len(), 2, "{fx:?}");
+        m.handle_message(loot_msg(&[GODRICK], false, None), t0 + ms(950));
+        // The apply unanswered: nothing.
+        let mut fx = Vec::new();
+        for at in (1_000..=3_000).step_by(100) {
+            fx.extend(loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        assert!(loot_asked(&fx).is_empty(), "{fx:?}");
+        // Answered: the next frame gives it.
+        applied(&mut m, t0, 3_050, "h1");
+        let fx = loot_frame(&mut m, t0, 3_100, roundtable(), Some(TOKEN));
+        assert_eq!(loot_asked(&fx), [(GODRICK, false)]);
+    }
+
+    #[test]
+    fn loot_received_twice_is_applied_once() {
+        // A teammate's kill, or the runner's own (paid): live, then in the
+        // list of a reconnection, both before a frame may give them.
+        for live_paid in [false, true] {
+            let t0 = Instant::now();
+            let mut m = loot_machine(t0);
+            go(&mut m, t0, 100, None);
+            m.handle_message(loot_msg(&[GODRICK], live_paid, None), t0 + ms(150));
+            m.handle_message(loot_msg(&[GODRICK, MARGIT], false, None), t0 + ms(160));
+            let mut fx = Vec::new();
+            for at in (216..=216 + settle_ms() + 1_000).step_by(100) {
+                fx.extend(loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN)));
+            }
+            assert_eq!(
+                loot_asked(&fx),
+                [(GODRICK, live_paid), (MARGIT, false)],
+                "{live_paid}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_unreadable_entry_is_tried_again_and_others_go_first() {
+        let t0 = Instant::now();
+        let mut m = loot_machine(t0);
+        m.handle_message(
+            loot_msg(&[GODRICK, MARGIT, RENNALA], false, None),
+            t0 + ms(50),
+        );
+        let fx = go_token(&mut m, t0, 100, roundtable(), Some(TOKEN));
+        assert_eq!(loot_asked(&fx), [(GODRICK, false)]);
+        answer_loot(&mut m, &fx, LootOutcome::Unreadable, t0 + ms(100));
+        let mut asked = Vec::new();
+        for at in (200..=1_000).step_by(100) {
+            let fx = loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN));
+            asked.extend(loot_asked(&fx).into_iter().map(|(flag, _)| (at, flag)));
+        }
+        let again = 100 + crate::core::relay_loot::LOOT_RETRY.as_millis() as u64;
+        assert_eq!(
+            asked,
+            [(200, MARGIT), (300, RENNALA), (again, GODRICK)],
+            "{asked:?}"
+        );
+    }
+
+    #[test]
+    fn a_live_kill_shows_the_banner_and_a_list_does_not() {
+        let t0 = Instant::now();
+        let mut m = loot_machine(t0);
+        m.handle_message(
+            loot_msg(&[GODRICK], false, Some(("Kahleeya", "Godrick the Grafted"))),
+            t0 + ms(50),
+        );
+        let banner = m.item_banner().expect("a banner");
+        assert_eq!(
+            (banner.title.as_str(), banner.line.as_str(), banner.tone),
+            (
+                "BOSS DEFEATED",
+                "Kahleeya defeated Godrick the Grafted",
+                FeedTone::Gain
+            )
+        );
+        // The killer's own message, and the list of a connection: none.
+        for (paid, announce) in [(true, Some(("Kahleeya", "Godrick"))), (false, None)] {
+            let mut m = loot_machine(t0);
+            m.handle_message(loot_msg(&[GODRICK], paid, announce), t0 + ms(50));
+            assert!(m.item_banner().is_none(), "{paid} {announce:?}");
+        }
+    }
+
+    #[test]
+    fn loot_is_dropped_when_the_relay_is_over_or_the_race_resets() {
+        for end in [
+            "team finished",
+            "member out",
+            "no relay",
+            "race reset",
+            "another participant",
+        ] {
+            let t0 = Instant::now();
+            let mut m = loot_machine(t0);
+            // A load holds the entries.
+            go(&mut m, t0, 100, None);
+            m.handle_message(loot_msg(&[GODRICK, MARGIT], false, None), t0 + ms(150));
+            let mut info = token_info("waiting", Some(TOKEN), true);
+            match end {
+                "team finished" => info.team_status = ParticipantStatus::Finished,
+                "member out" => set_member_status(&mut info, "p1", ParticipantStatus::Abandoned),
+                "no relay" => {
+                    m.handle_message(relay_auth("running", None), t0 + ms(160));
+                }
+                "race reset" => {
+                    // The room closed and opened again in setup, then the
+                    // new start; the member's new save validated since.
+                    reconnect_token(&mut m, t0, 160, "waiting");
+                    m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0 + ms(165));
+                    m.handle_message(MachineMessage::RaceStart(0), t0 + ms(170));
+                }
+                _ => {
+                    let mut auth = relay_auth("running", Some(info.clone()));
+                    if let MachineMessage::AuthOk { participant_id, .. } = &mut auth {
+                        *participant_id = "p2".to_string();
+                    }
+                    m.handle_message(auth, t0 + ms(160));
+                }
+            }
+            update(&mut m, info, t0, 180);
+            assert!(m.relay_loot.is_empty(), "{end}");
+            let mut fx = Vec::new();
+            for at in (216..=216 + settle_ms() + 3_000).step_by(100) {
+                fx.extend(loot_frame(&mut m, t0, at, roundtable(), Some(TOKEN)));
+            }
+            assert!(loot_asked(&fx).is_empty(), "{end}: {fx:?}");
+        }
+    }
+
+    #[test]
+    fn a_holder_receives_loot_too() {
+        let t0 = Instant::now();
+        let mut m = token_machine("holder", true, t0);
+        go_token(&mut m, t0, 0, Some(IN_ZONE), Some(TOKEN));
+        m.handle_message(
+            loot_msg(&[MARGIT], false, Some(("Kahleeya", "Margit"))),
+            t0 + ms(50),
+        );
+        let fx = loot_frame(&mut m, t0, 100, Some(IN_ZONE), Some(TOKEN));
+        assert_eq!(loot_asked(&fx), [(MARGIT, false)]);
     }
 }

@@ -979,6 +979,12 @@ impl RaceTracker {
                 Effect::SendRelayTaken { handoff_id } => {
                     self.ws_client.send_relay_taken(handoff_id);
                 }
+                Effect::ApplyRelayLoot { entry, paid } => {
+                    // Answered on this pass, whatever became of it.
+                    let outcome = relay::apply_loot(&self.event_flag_reader, &entry, paid);
+                    self.machine
+                        .relay_loot_result(entry, paid, outcome, Instant::now());
+                }
                 Effect::SendRelayHandoffRequest { to_participant_id } => {
                     self.ws_client.send_relay_handoff_request(to_participant_id);
                 }
