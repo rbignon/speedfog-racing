@@ -7,10 +7,10 @@ in a named team of a relay race, whose "mod" is this script: it connects over
 /ws/mod/<race> with the participant's own token and behaves as a well-behaved
 mod does (the contract is the "Baton", "Gate" and "Lifecycle" sections of
 docs/RELAY.md): it reports ready, passes the fresh-save gate with its first
-report once the race runs, tells the server it waits at the Chapel
+report once the race runs, tells the server it waits at the Roundtable Hold
 (`relay_ready`, again after every reconnection), answers a `relay_release` with
-a character state (a plausible default, or the file --state names, checked
-against the server's model at startup), answers a `relay_take` with
+a character state (its lit graces: none by default, or the file --state names,
+checked against the server's model at startup), answers a `relay_take` with
 `relay_taken` and only then reports the team's progress, starting from the team
 IGT it was given. It confirms the token it is given with `relay_bound` (it has
 no save to write it into) as soon as it reads one not yet bound, once per token,

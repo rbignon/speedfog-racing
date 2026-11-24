@@ -507,7 +507,7 @@ def validate(mod: RelayModClient) -> None:
 
 
 def set_ready(mod: RelayModClient) -> None:
-    """The member is loaded at the Chapel with its lock raised."""
+    """The member is loaded at the Roundtable Hold with its lock raised."""
     mod.send({"type": "relay_ready", "ready": True})
     mod.receive_until("relay_update", lambda m: member_view(m, mod.participant_id)["ready"])
 
@@ -520,7 +520,7 @@ def pass_gate(mod: RelayModClient, flag: int, igt_ms: int, message_id: int) -> N
 
 
 def make_receiver(mod: RelayModClient) -> None:
-    """The member may receive the baton: validated, then ready at the Chapel."""
+    """The member may receive the baton: validated, then ready at the Roundtable Hold."""
     validate(mod)
     set_ready(mod)
 

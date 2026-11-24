@@ -391,10 +391,11 @@ class RelayModHandler(RaceModHandler):
         runs validates its save when the IGT is at most ``MAX_FRESH_IGT_MS``,
         the member becoming PLAYING (from READY, or REGISTERED when the report
         came before its ``ready``: it showed up), which gives them a share of
-        the cap. Items are a union at a handoff, so a member on an old save
-        would bring its inventory into the team. Its IGT is never judged
-        afterwards. The validation draws the member's save token
-        (``draw_relay_token``), which the update that follows tells their mod.
+        the cap. The member plays the whole race on the character of the save
+        validated here: the validation draws their save token
+        (``draw_relay_token``), which binds them to that save and which the
+        update that follows tells their mod. Its IGT is never judged
+        afterwards.
         ``member`` comes from the lock-free read, so the write is an UPDATE
         guarded on the status read: it never brings back a member who went out
         meanwhile, and a token is drawn once, by the one write that validates.

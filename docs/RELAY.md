@@ -17,6 +17,13 @@ run, and only one of them holds the baton (plays) at a time.
   team's first holder and each waiting teammate alike, its IGT must not exceed 60
   seconds (`MAX_FRESH_IGT_MS`). A runner who takes the baton later plays on the
   team's IGT, which the take gives their game.
+- A member plays the whole race on the save that was validated: the validation draws
+  a token that binds them to it.
+- Each runner keeps their own character: a handoff carries the team's time and world
+  (its IGT, the lit graces, the bosses killed, the zone to restart), nothing of the
+  character.
+- The loot of the graph's bosses (items and runes) goes to every member of the team.
+- Waiting runners wait at the Roundtable Hold.
 - The relay wire contract starts at protocol 1.19 (`RELAY_MIN_PROTOCOL`).
 
 Relay races are off unless the server setting `RELAY_RACES_ENABLED` is true
@@ -35,15 +42,15 @@ share:
 
 | Key                    | Value      | Meaning                                                                                                                                                                   |
 | ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lock_flag`            | 1050290500 | while ON, no graph warp takes the player and the Chapel map refuses fast travel                                                                                           |
+| `lock_flag`            | 1050290500 | while ON, no graph warp takes the player: the fog gates are inert; it touches no fast travel                                                                              |
 | `chapel_warp_flag`     | 1050290501 | raised, it warps the player to the Chapel grace and clears itself                                                                                                         |
 | `warp_flag_base`       | 1050290510 | `warp_flag_base + n`, raised, warps the player to the entrance of connection n and clears itself; n is the connection's zone-tracking flag minus `zone_flag_base`         |
-| `warp_flag_count`      | 490        | how many warp flags follow the base                                                                                                                                       |
+| `warp_flag_count`      | 490        | the number of warp flags, from `warp_flag_base` up                                                                                                                        |
 | `zone_flag_base`       | 1050294000 | first of the zone-tracking flags                                                                                                                                          |
-| `travel_lock_flag`     | 1050290503 | the lock on fast travel and graph warps outside the baton's moves                                                                                                         |
-| `roundtable_warp_flag` | 1050290504 | raised, it warps the player to the Roundtable Hold grace and clears itself                                                                                                |
-| `token_flag_base`      | 1050297900 | first of the flags that carry a payload across the handoff                                                                                                                |
-| `token_bits`           | 24         | how many token flags follow the base                                                                                                                                      |
+| `travel_lock_flag`     | 1050290503 | while ON, the Chapel and Roundtable Hold maps refuse fast travel; it touches no graph warp                                                                                |
+| `roundtable_warp_flag` | 1050290504 | raised, it warps the player to the Roundtable Hold and clears itself                                                                                                      |
+| `token_flag_base`      | 1050297900 | bit `b` of the member's 24-bit save token is the flag `token_flag_base + b` ("One character per member")                                                                  |
+| `token_bits`           | 24         | the number of token flags, from `token_flag_base` up                                                                                                                      |
 | `loot`                 | object     | what each boss gives, keyed by the boss's defeat flag: `runes`, `rune_speffect`, `received_flag`, `pickup_flags` and `items` (`id`, `qty`); empty for a seed with no boss |
 
 `Seed.relay` is true when `relay` is the whole 4.16 block: an object holding a
@@ -185,16 +192,17 @@ What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py
 
 ### Operations
 
-`RelayModHandler` hands the five baton messages to the operations of
-`websocket/race/relay.py`. A payload that does not parse (its pydantic model, the
-`CharacterState` bounds: at most 1000 `grace_flags`, each an integer from 0 to
-2^31 - 1; an IGT out of range) is dropped, so a stored state always fits the mod's
-types: a team replays it at every take. `CharacterState` has that single field: a
-handoff carries the lit graces and nothing of the character, each runner keeping
-their own. A state with other fields (one stored before this shape, or sent by an
-older mod) reads as its graces, the rest ignored. A refused request gets a
-`relay_refused` to the asker, the first matching row winning (codes in `RelayRefusal`,
-each with its `RELAY_REFUSAL_MESSAGES` text):
+`RelayModHandler` hands the six relay messages of a mod (`relay_ready`,
+`relay_handoff_request`, `relay_take_request`, `relay_state`, `relay_taken`,
+`relay_bound`) to the operations of `websocket/race/relay.py`. A payload that does
+not parse (its pydantic model, the `CharacterState` bounds: at most 1000
+`grace_flags`, each an integer from 0 to 2^31 - 1; an IGT out of range) is dropped,
+so a stored state always fits the mod's types: a team replays it at every take.
+`CharacterState` has that single field: a handoff carries the lit graces and nothing
+of the character, each runner keeping their own. A state with other fields (one
+stored before this shape, or sent by an older mod) reads as its graces, the rest
+ignored. A refused request gets a `relay_refused` to the asker, the first matching
+row winning (codes in `RelayRefusal`, each with its `RELAY_REFUSAL_MESSAGES` text):
 
 | Request                 | Refusals, in order                                                                                                                                                                                                                                                                                                                               |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -245,8 +253,8 @@ then goes back to them.
   failure after the commit still leaves a take that expires); `relay_take`
   (`handoff_id`, `state`, `igt_ms`, `defeat_flags`, `warp_flag`, `zone_name`) to the
   receiver; `relay_update` to the team, whose `role: waiting` is what makes the
-  giver's mod lock and go to the Chapel. A receiver whose mod is no longer connected
-  gets a free baton at once (`baton_free`), and no take is awaited from them.
+  giver's mod lock and go to the Roundtable Hold. A receiver whose mod is no longer
+  connected gets a free baton at once (`baton_free`), and no take is awaited from them.
 - **Before `relay_taken`**: from the flip until its acknowledgement, the receiver's
   game still carries its own save's IGT and deaths, so the progress gate hears it as
   a waiting runner (`awaiting_take`): its `event_flag` and `zone_query` are
@@ -516,12 +524,11 @@ carry every team's history. No progress load reads `character_state` (deferred).
   last raw count their mod reported: as holder, stored in the commit that applies
   the report; without the baton, stored when it changes (`_store_own_deaths`, an
   UPDATE of the member alone, never of a member who is out), so a death made while
-  waiting (a fall at the Chapel, a giver dying before its return there) is not
-  taken for one made as holder at the next take. The team's count moves by what
-  the holder's counter moved
-  (`team.death_count + reported - member.death_count`), so it carries on across a
-  change of holder. When the member goes out, or the team ends, their row takes the
-  team's count instead ("Lifecycle").
+  waiting (a giver dying on its way back to the Roundtable Hold) is not taken for one
+  made as holder at the next take. The team's count moves by what the holder's
+  counter moved (`team.death_count + reported - member.death_count`), so it carries
+  on across a change of holder. When the member goes out, or the team ends, their row
+  takes the team's count instead ("Lifecycle").
 - **History.** Every entry the team's history gains carries `runner_id`, the
   holder's participant id. A fog gate stores its flag in `entry_flag_id`, the zone a
   handoff restarts (`RelayInfo.zone_name`); a backtrack seen through `zone_query`

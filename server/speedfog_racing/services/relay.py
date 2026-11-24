@@ -363,12 +363,12 @@ def receive_refusal(
     """
     if member.status in TERMINAL_PARTICIPANT_STATUSES:
         return RelayRefusal.TARGET_UNAVAILABLE
-    waiting_at_chapel = connected and ready
-    if not asking and not waiting_at_chapel:
+    waiting_at_roundtable = connected and ready
+    if not asking and not waiting_at_roundtable:
         return RelayRefusal.TARGET_UNAVAILABLE
     if not member.relay_validated:
         return RelayRefusal.NOT_VALIDATED
-    if not waiting_at_chapel:
+    if not waiting_at_roundtable:
         return RelayRefusal.NOT_READY
     if member.relay_zones >= cap:
         return RelayRefusal.AT_CAP if asking else RelayRefusal.TARGET_AT_CAP
