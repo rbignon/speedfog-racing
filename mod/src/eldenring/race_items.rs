@@ -106,14 +106,14 @@ struct InventoryLists {
 /// player.
 pub fn spawn_goods(goods_id: u32) -> bool {
     profile_span!("race_items.spawn_goods");
-    inject_one(GOODS_TYPE_FLAG | goods_id)
+    inject_one(GOODS_TYPE_FLAG | goods_id, None)
 }
 
 /// Give one talisman (EquipParamAccessory row `talisman_id`). False when
 /// nothing was injected, as `spawn_goods`.
 pub fn spawn_talisman(talisman_id: u32) -> bool {
     profile_span!("race_items.spawn_talisman");
-    inject_one(ACCESSORY_TYPE_FLAG | talisman_id)
+    inject_one(ACCESSORY_TYPE_FLAG | talisman_id, None)
 }
 
 /// The talismans the player wears: the four talisman slots' param ids in

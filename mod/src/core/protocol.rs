@@ -658,6 +658,11 @@ pub struct RelayInfo {
 pub struct RelayLootItem {
     pub id: u32,
     pub qty: u32,
+    /// The ash of war a weapon comes with: its `EquipParamGem` row id, with
+    /// no category in the top bits. Absent (or null) for an item that
+    /// carries none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gem: Option<u32>,
 }
 
 /// The loot of one boss the team killed.
@@ -2635,7 +2640,8 @@ mod tests {
             entries[0].items[0],
             RelayLootItem {
                 id: 0x2000_0000 | 4012,
-                qty: 1
+                qty: 1,
+                gem: None
             }
         );
         let list = r#"{"type":"relay_loot","paid":true,"announce":null,
@@ -2648,6 +2654,26 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn relay_loot_reads_a_weapons_ash_of_war_where_the_server_sends_one() {
+        // The server sends `gem` only for an item that carries one; `null`
+        // reads as none too.
+        let msg = r#"{"type":"relay_loot","paid":false,"announce":null,
+            "entries":[{"flag":10000800,"received_flag":1050297000,"pickup_flags":[],
+                        "items":[{"id":2010000,"qty":1,"gem":10100},
+                                 {"id":1073742044,"qty":2},
+                                 {"id":2020000,"qty":1,"gem":null}],
+                        "rune_speffect":null,"runes":0}]}"#;
+        let ServerMessage::RelayLoot { entries, .. } = serde_json::from_str(msg).unwrap() else {
+            panic!()
+        };
+        let gems: Vec<_> = entries[0].items.iter().map(|i| (i.id, i.gem)).collect();
+        assert_eq!(
+            gems,
+            [(2010000, Some(10100)), (1073742044, None), (2020000, None)]
+        );
     }
 
     #[test]

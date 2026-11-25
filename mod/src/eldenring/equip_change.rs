@@ -309,7 +309,7 @@ pub fn equip_junk_weapon(weapon_id: u32) -> bool {
     };
     let had = handles_of(inventory.normal_entries(), weapon_id);
     // A weapon's item id has category 0: its encoded id is its param id.
-    if !inject_one(weapon_id) {
+    if !inject_one(weapon_id, None) {
         warn!(
             weapon_id,
             "[ITEMS] Junk weapon not given: the give function or MapItemMan is unavailable"

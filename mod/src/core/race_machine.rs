@@ -20154,6 +20154,7 @@ mod tests {
             items: vec![crate::core::protocol::RelayLootItem {
                 id: 0x4000_0000 | (flag % 1000),
                 qty: 1,
+                gem: None,
             }],
             rune_speffect: Some(755_891_000 + index),
             runes: 13_000,

@@ -99,16 +99,18 @@ pub fn decide_reading(
     decide(received, paid, defeated, &pickups).ok_or(LootSnag::PickupUnread)
 }
 
-/// The (item id, units) to give, in the entry's order, cut at
-/// `LOOT_UNITS_MAX` units in all; and the units cut.
-pub fn units(entry: &RelayLootEntry) -> (Vec<(u32, u32)>, u32) {
+/// The (item id, its ash of war, units) to give, in the entry's order, cut
+/// at `LOOT_UNITS_MAX` units in all; and the units cut. Each unit of an item
+/// carries the item's ash of war (`RelayLootItem::gem`): a weapon is given
+/// with it mounted, one unit per `qty` like any other item.
+pub fn units(entry: &RelayLootEntry) -> (Vec<(u32, Option<u32>, u32)>, u32) {
     let mut left = LOOT_UNITS_MAX;
     let mut cut = 0u32;
     let mut out = Vec::new();
     for item in &entry.items {
         let n = item.qty.min(left);
         if n > 0 {
-            out.push((item.id, n));
+            out.push((item.id, item.gem, n));
         }
         left -= n;
         cut = cut.saturating_add(item.qty - n);
@@ -157,8 +159,9 @@ pub enum LootSnag {
 }
 
 /// Carry `action` out on `entry` through the shell's access to the game:
-/// `give_unit` gives one unit of an item, `apply_rune` applies a SpEffect to
-/// the player, `raise` raises a flag; each returns whether the game took it.
+/// `give_unit` gives one unit of an item (its id, and the ash of war to
+/// mount on it, `None` for none), `apply_rune` applies a SpEffect to the
+/// player, `raise` raises a flag; each returns whether the game took it.
 /// A mark raises the received flag only. A give gives every unit of
 /// `units(entry)`, then the rune effect when the entry has one, then raises
 /// the received flag and every pickup flag. When the first thing tried (the
@@ -171,7 +174,7 @@ pub enum LootSnag {
 pub fn carry_out(
     action: LootAction,
     entry: &RelayLootEntry,
-    mut give_unit: impl FnMut(u32) -> bool,
+    mut give_unit: impl FnMut(u32, Option<u32>) -> bool,
     mut apply_rune: impl FnMut(u32) -> bool,
     mut raise: impl FnMut(u32) -> bool,
 ) -> LootOutcome {
@@ -187,9 +190,9 @@ pub fn carry_out(
         LootAction::Give => {
             let (to_give, cut) = units(entry);
             let (mut given, mut failed) = (0u32, 0u32);
-            for (id, n) in to_give {
+            for (id, gem, n) in to_give {
                 for _ in 0..n {
-                    if give_unit(id) {
+                    if give_unit(id, gem) {
                         given += 1;
                     } else if given == 0 {
                         return LootOutcome::NotDone(LootSnag::UnitRefused);
@@ -388,15 +391,23 @@ mod tests {
         }
     }
 
-    /// An entry with `items` as `(id, qty)`.
+    /// An entry with `items` as `(id, qty)`, none with an ash of war.
     fn entry_with(items: &[(u32, u32)]) -> RelayLootEntry {
         RelayLootEntry {
             items: items
                 .iter()
-                .map(|&(id, qty)| RelayLootItem { id, qty })
+                .map(|&(id, qty)| RelayLootItem { id, qty, gem: None })
                 .collect(),
             ..entry(11_050_850)
         }
+    }
+
+    /// A weapon of `qty` units with the ash of war `gem` mounted, then two
+    /// units of a goods with none.
+    fn weapon_entry(qty: u32, gem: u32) -> RelayLootEntry {
+        let mut e = entry_with(&[(2_010_000, qty), (0x4000_0000 | 220, 2)]);
+        e.items[0].gem = Some(gem);
+        e
     }
 
     #[test]
@@ -420,7 +431,38 @@ mod tests {
     #[test]
     fn units_are_cut_at_the_ceiling_and_the_cut_is_counted() {
         let e = entry_with(&[(10, 3), (11, 100), (12, 2)]);
-        assert_eq!(units(&e), (vec![(10, 3), (11, 61)], 41));
+        assert_eq!(units(&e), (vec![(10, None, 3), (11, None, 61)], 41));
+        // An item with an ash of war is one unit per `qty` like any other,
+        // each unit carrying it, and the ceiling cuts it the same way.
+        let big = weapon_entry(70, 10_100);
+        assert_eq!(units(&big), (vec![(2_010_000, Some(10_100), 64)], 8));
+    }
+
+    #[test]
+    fn each_unit_given_carries_its_items_ash_of_war() {
+        let e = weapon_entry(2, 10_100);
+        let mut given = Vec::new();
+        let outcome = carry_out(
+            LootAction::Give,
+            &e,
+            |id, gem| {
+                given.push((id, gem));
+                true
+            },
+            |_| true,
+            |_| true,
+        );
+        assert!(matches!(outcome, LootOutcome::Given { units: 4, .. }));
+        let goods = 0x4000_0000 | 220;
+        assert_eq!(
+            given,
+            [
+                (2_010_000, Some(10_100)),
+                (2_010_000, Some(10_100)),
+                (goods, None),
+                (goods, None),
+            ]
+        );
     }
 
     #[test]
@@ -488,7 +530,7 @@ mod tests {
         let outcome = carry_out(
             action,
             e,
-            |id| {
+            |id, _| {
                 let index = calls.borrow().iter().filter(|c| c.0 == "unit").count();
                 calls.borrow_mut().push(("unit", id));
                 refuse_from.is_none_or(|from| index < from)

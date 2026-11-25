@@ -41,6 +41,8 @@ struct SpawnRequest {
     item_id: u32,
     qty: u32,
     dur: i32,
+    /// The ash of war mounted on a weapon given, its `EquipParamGem` row id
+    /// (no category nibble); -1 for none.
     gem: i32,
 }
 
@@ -49,12 +51,17 @@ type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *
 
 /// Give one unit of an item through func_item_inject. `encoded_id` carries
 /// the item type in its high nibble (`GEM_TYPE_FLAG`, goods `0x4000_0000`).
+/// `gem` is the ash of war to mount on a weapon, its `EquipParamGem` row id
+/// with no category nibble, written in the request's last field (-1 for
+/// `None`, and for an id the field cannot hold, above `i32::MAX`): the
+/// request's layout is the game's, and that field is how the tools calling
+/// this function spawn a weapon with an ash of war mounted.
 ///
 /// False, with nothing injected, when func_item_inject or MapItemMan's
 /// address is unknown for this game version, or MapItemMan is null (player
 /// not in the game world). True once the game function was called: its
 /// output word is logged, not read as a success.
-pub fn inject_one(encoded_id: u32) -> bool {
+pub fn inject_one(encoded_id: u32, gem: Option<u32>) -> bool {
     let base = Pointers::new().base_addresses;
     let func_addr = base.func_item_inject;
     if func_addr == 0 || base.map_item_man == 0 {
@@ -69,12 +76,13 @@ pub fn inject_one(encoded_id: u32) -> bool {
     // version, called with the practice tool's arguments: the live
     // MapItemMan, a single-unit request, a scratch output and flags 0.
     let spawn_fn: SpawnItemFn = unsafe { std::mem::transmute(func_addr) };
+    let gem = gem.and_then(|gem| i32::try_from(gem).ok()).unwrap_or(-1);
     let mut request = SpawnRequest {
         one: 1,
         item_id: encoded_id,
         qty: 1,
         dur: -1,
-        gem: -1,
+        gem,
     };
     let mut output = 0u32;
     unsafe {
@@ -214,7 +222,7 @@ pub fn spawn_items_blocking(
         let encoded_id = GEM_TYPE_FLAG | item.id;
 
         for _ in 0..item.qty {
-            if !inject_one(encoded_id) {
+            if !inject_one(encoded_id, None) {
                 warn!(
                     id = item.id,
                     encoded = format_args!("0x{:08X}", encoded_id),

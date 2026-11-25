@@ -252,7 +252,8 @@ pub fn write_token(reader: &EventFlagReader, flags: &[(u32, bool)]) -> usize {
 /// decision needs (`core::relay_loot::decide_reading`, which says which and
 /// in what order), then carry out what it decides
 /// (`core::relay_loot::carry_out`): the items given one unit at a time
-/// through the item spawner, the rune effect through the SpEffect apply
+/// through the item spawner, each with the ash of war its item carries (a
+/// weapon's, mounted on it), the rune effect through the SpEffect apply
 /// function, the flags raised through the event flag reader. A flag that
 /// cannot be raised is warned, with its id; a give whose received flag it
 /// is says so (`LootOutcome::Given { marked: false, .. }`). `NotDone` with
