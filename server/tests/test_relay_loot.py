@@ -148,6 +148,8 @@ def test_an_item_id_past_the_i32_range_is_kept():
         {"runes": 1},  # keys missing
         {**RELAY_BLOCK["loot"]["10000800"], "items": [{"id": -1, "qty": 1}]},
         {**RELAY_BLOCK["loot"]["10000800"], "items": [{"id": 1, "qty": 0}]},
+        {**RELAY_BLOCK["loot"]["10000800"], "items": [{"id": 1, "qty": 1, "gem": 0}]},
+        {**RELAY_BLOCK["loot"]["10000800"], "items": [{"id": 1, "qty": 1, "gem": 2**31}]},
         {**RELAY_BLOCK["loot"]["10000800"], "received_flag": "x"},
         "not an entry",
     ],
@@ -159,6 +161,17 @@ def test_a_malformed_loot_entry_is_no_entry(bad, caplog):
     assert [r.getMessage() for r in caplog.records] == [
         f"Relay loot entry unusable: flag={BOSS_FLAG}"
     ]
+
+
+def test_a_weapons_ash_of_war_reaches_the_wire_and_no_other_item_carries_the_key():
+    items = [{"id": 1000000, "qty": 1, "gem": 10000}, {"id": 536874924, "qty": 2}]
+    raw = {**RELAY_BLOCK["loot"]["10000800"], "items": items}
+    entry = loot_entry({"relay": {**RELAY_BLOCK, "loot": {"10000800": raw}}}, BOSS_FLAG)
+    assert entry is not None
+    wire = json.loads(
+        RelayLootMessage(entries=[entry], paid=False, announce=None).model_dump_json()
+    )
+    assert wire["entries"][0]["items"] == items
 
 
 def test_an_entry_paying_no_rune_and_no_item_goes_out_with_a_null_rune_speffect():

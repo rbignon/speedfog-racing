@@ -881,6 +881,17 @@ class RelayLootItem(BaseModel):
 
     id: Annotated[int, Field(ge=0, le=2**32 - 1)]
     qty: Annotated[int, Field(ge=1, le=999)]
+    # The ash of war a weapon comes with: its EquipParamGem row, with no
+    # category in the top bits. None for an item that carries none.
+    gem: Annotated[int, Field(ge=1, le=2**31 - 1)] | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_no_gem(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """An item with no ash of war goes out as ``{id, qty}``."""
+        data: dict[str, Any] = handler(self)
+        if self.gem is None:
+            del data["gem"]
+        return data
 
 
 class RelayLootEntry(BaseModel):
