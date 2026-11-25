@@ -53,9 +53,10 @@ type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *
 /// the item type in its high nibble (`GEM_TYPE_FLAG`, goods `0x4000_0000`).
 /// `gem` is the ash of war to mount on a weapon, its `EquipParamGem` row id
 /// with no category nibble, written in the request's last field (-1 for
-/// `None`, and for an id the field cannot hold, above `i32::MAX`): the
-/// request's layout is the game's, and that field is how the tools calling
-/// this function spawn a weapon with an ash of war mounted.
+/// `None`, for 0, which names no ash of war, and for an id the field cannot
+/// hold, above `i32::MAX`): the request's layout is the game's, and that
+/// field is how the tools calling this function spawn a weapon with an ash
+/// of war mounted. The call's log line carries the value written.
 ///
 /// False, with nothing injected, when func_item_inject or MapItemMan's
 /// address is unknown for this game version, or MapItemMan is null (player
@@ -76,7 +77,10 @@ pub fn inject_one(encoded_id: u32, gem: Option<u32>) -> bool {
     // version, called with the practice tool's arguments: the live
     // MapItemMan, a single-unit request, a scratch output and flags 0.
     let spawn_fn: SpawnItemFn = unsafe { std::mem::transmute(func_addr) };
-    let gem = gem.and_then(|gem| i32::try_from(gem).ok()).unwrap_or(-1);
+    let gem = gem
+        .filter(|&gem| gem > 0)
+        .and_then(|gem| i32::try_from(gem).ok())
+        .unwrap_or(-1);
     let mut request = SpawnRequest {
         one: 1,
         item_id: encoded_id,
@@ -97,6 +101,7 @@ pub fn inject_one(encoded_id: u32, gem: Option<u32>) -> bool {
     // check can tell a given item's value from a refused one's.
     info!(
         encoded = format_args!("0x{:08X}", encoded_id),
+        gem,
         output = format_args!("0x{:08X}", output),
         "func_item_inject called"
     );

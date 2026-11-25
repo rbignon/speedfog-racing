@@ -782,9 +782,10 @@ pub struct RaceMachine {
     /// readiness does not survive the socket).
     relay_ready_sent: Option<bool>,
     /// What keeps the runner from being ready, as the waiting banner says it
-    /// in place of the take prompt: decided with that readiness, from the
-    /// same values (`relay_view::NOT_READY_TEXT`, `CHECKING_SAVE_TEXT` or
-    /// `SAVE_CHECK_FAILED_TEXT`).
+    /// in place of the take prompt: decided where that readiness is, from
+    /// the same values, on every frame (the readiness alone is sent on
+    /// connected frames only): `relay_view::NOT_READY_TEXT`,
+    /// `CHECKING_SAVE_TEXT` or `SAVE_CHECK_FAILED_TEXT`.
     relay_not_ready_text: &'static str,
     /// The holder's gates are locked (the cap), and its banner is due.
     relay_capped: bool,
@@ -897,6 +898,12 @@ pub struct RaceMachine {
     /// one, no relay any more) and at an `auth_ok` naming another
     /// participant.
     relay_token_found: bool,
+    /// A load came since the read that judged the save wrong by its token
+    /// (`relay_wrong_token`): a read that then finds the runner's token is a
+    /// return to the race save. A wrong first read lifted by the settled
+    /// read of the same load (a flash on the race save) has had none.
+    /// Cleared whenever the wrong token is judged or lifted.
+    relay_wrong_across_load: bool,
     /// The token whose `relay_bound` went out since the last `auth_ok`: the
     /// server answers only the first valid one, so one per connection.
     relay_bound_sent: Option<u32>,
@@ -1140,6 +1147,7 @@ impl RaceMachine {
             relay_token_writes: 0,
             relay_token_written: false,
             relay_token_found: false,
+            relay_wrong_across_load: false,
             relay_bound_sent: None,
             relay_token_unfit: false,
             relay_exit_held: None,
@@ -1683,7 +1691,7 @@ impl RaceMachine {
 
     /// The waiting banner's last line and whether it is the hold prompt
     /// itself (the hold bar goes under it), decided together. Field reads
-    /// only: the line not ready was chosen with the readiness sent
+    /// only: the line not ready was chosen from the values of the readiness
     /// (`relay_not_ready_text`).
     fn relay_wait_prompt(&self) -> (&str, bool) {
         let Some(wait) = self.relay_wait_banner() else {
@@ -1915,6 +1923,7 @@ impl RaceMachine {
             // the other save's: no read of the runner's token lifted it.
             if self.relay_wrong_token {
                 self.relay_wrong_token = false;
+                self.relay_wrong_across_load = false;
                 info!("[RELAY] No relay any more, wrong save lifted");
                 if let Some(parked) = self.drop_held_exit() {
                     info!(
@@ -3955,8 +3964,11 @@ impl RaceMachine {
         // frame whose relay token read finds the race save back after
         // another one (`judge_relay_token`), whichever read that is. Never a
         // penalty into a save that is not the race save: a return the IGT
-        // guard still reads as a wrong save pays nothing.
+        // guard still reads as a wrong save pays nothing. None while a relay
+        // take is in progress, from its receipt to its acknowledgement: its
+        // IGT write is to come, and would overwrite the penalty.
         if (quit_out || token_return)
+            && self.relay_take.is_none()
             && self.save_ok()
             && self.is_race_running()
             && !self.am_i_finished()
@@ -4060,7 +4072,9 @@ impl RaceMachine {
             }
 
             // The zone query of an exit with no deferred flags (no fog gate:
-            // a death, a respawn, a quit-out, a fast travel).
+            // a death, a respawn, a quit-out, a fast travel). A return to the
+            // race save its own exit frame reads is tagged as a quit-out's
+            // (one held back was tagged at its lift, `judge_relay_token`).
             let zone_query = match held_exit {
                 Some(exit) => exit.zone_query,
                 None => Some(BufferedZoneQuery {
@@ -4069,7 +4083,7 @@ impl RaceMachine {
                     map_id: input.position.as_ref().map(|p| p.map_id_str.clone()),
                     position: input.position.as_ref().map(|p| [p.x, p.y, p.z]),
                     play_region_id: input.position.as_ref().and_then(|p| p.play_region_id),
-                    quit_out,
+                    quit_out: quit_out || token_return,
                 }),
             };
             if held {
@@ -5179,9 +5193,12 @@ impl RaceMachine {
     ///
     /// Returns whether this frame's read found the runner's token on a save
     /// it had judged wrong, a read having found that token on a save before
-    /// (`relay_token_found`): the race save loaded again from the menu after
-    /// another one, which the tick pays as a quit-out, on this frame. A lift
-    /// that is no read of the runner's token returns false.
+    /// (`relay_token_found`), with a load since that save was judged wrong
+    /// (`relay_wrong_across_load`): the race save loaded again from the menu
+    /// after another one, which the tick pays as a quit-out, on this frame
+    /// (its exit's zone query tagged, the one held back included). A lift
+    /// that is no read of the runner's token, or a wrong first read lifted
+    /// by the settled read of the same load, returns false.
     fn judge_relay_token(
         &mut self,
         connected: bool,
@@ -5205,6 +5222,7 @@ impl RaceMachine {
             let lifted = expected.is_none() || self.relay_over() || !self.is_race_running();
             if self.relay_wrong_token && lifted {
                 self.relay_wrong_token = false;
+                self.relay_wrong_across_load = false;
                 info!(live, "[RELAY] Token no longer judged, wrong save lifted");
                 // No read of the runner's token lifted it: a held exit
                 // report was the other save's.
@@ -5223,6 +5241,9 @@ impl RaceMachine {
             self.relay_token_verdict = None;
             self.relay_token_settled = false;
             self.relay_token_unreadable_warned = false;
+            // A wrong verdict carried through a load: what loads now may be
+            // the race save.
+            self.relay_wrong_across_load = self.relay_wrong_token;
             return false;
         }
         if !self.was_position_readable {
@@ -5257,17 +5278,29 @@ impl RaceMachine {
                     // the log.
                     warn!(read, matches = false, "[RELAY] Token mismatch, wrong save");
                     self.relay_wrong_token = true;
+                    self.relay_wrong_across_load = false;
                     // No quit-out penalty into a save that is not the race
                     // save's, as when the IGT finds a wrong save.
                     self.pending_quit_out = false;
                 }
             } else if self.relay_wrong_token {
                 // The runner's token found again after another save's, a read
-                // having found it before: a return to the race save, paid as
-                // a quit-out (the line's `quit_out`).
-                returned = found && self.relay_token_found;
+                // having found it before and a load between: a return to the
+                // race save, paid as a quit-out (the line's `quit_out`), its
+                // exit's report tagged as a quit-out's when it was held.
+                returned = found && self.relay_token_found && self.relay_wrong_across_load;
                 info!(quit_out = returned, "[RELAY] Token matches again, resuming");
                 self.relay_wrong_token = false;
+                self.relay_wrong_across_load = false;
+                if returned {
+                    if let Some(query) = self
+                        .relay_exit_held
+                        .as_mut()
+                        .and_then(|exit| exit.zone_query.as_mut())
+                    {
+                        query.quit_out = true;
+                    }
+                }
                 // The IGT guards held the race save's last readings through
                 // the other save: its next reading seeds them, as at a race
                 // start (left to the IGT's own recovery while it reads a
@@ -5660,31 +5693,32 @@ impl RaceMachine {
         // waiting banner's line not ready is chosen from the same two
         // halves: the place, or only the token's verdict, still to come or
         // a check that cannot end by itself (the flags unreadable past the
-        // warn, or the writes spent on a save that still reads none).
+        // warn, or the writes spent on a save that still reads none). The
+        // line follows the frame's facts, connected or not; only the send
+        // waits for a connection.
+        let placed = waiting_live
+            && self.relay_lock == Some(true)
+            && self.relay_travel_lock == Some(true)
+            && self.relay_asserted
+            && readable
+            && self.save_ok()
+            && self.relay_warp.is_none()
+            && self.frame_snapshot.map_id == Some(relay::ROUNDTABLE_MAP_ID);
+        let checked = self.relay_token_settled
+            && matches!(
+                self.relay_token_verdict,
+                Some(Verdict::Good | Verdict::NotExpected)
+            );
+        let failed = (self.relay_token_unreadable_warned && self.relay_token_retry_at.is_some())
+            || (self.relay_token_verdict == Some(Verdict::Write)
+                && self.relay_token_writes >= relay_token::WRITE_ATTEMPTS);
+        self.relay_not_ready_text = match (placed, checked) {
+            (true, false) if failed => relay_view::SAVE_CHECK_FAILED_TEXT,
+            (true, false) => relay_view::CHECKING_SAVE_TEXT,
+            _ => relay_view::NOT_READY_TEXT,
+        };
         if connected {
-            let placed = waiting_live
-                && self.relay_lock == Some(true)
-                && self.relay_travel_lock == Some(true)
-                && self.relay_asserted
-                && readable
-                && self.save_ok()
-                && self.relay_warp.is_none()
-                && self.frame_snapshot.map_id == Some(relay::ROUNDTABLE_MAP_ID);
-            let checked = self.relay_token_settled
-                && matches!(
-                    self.relay_token_verdict,
-                    Some(Verdict::Good | Verdict::NotExpected)
-                );
             let ready = placed && checked;
-            let failed = (self.relay_token_unreadable_warned
-                && self.relay_token_retry_at.is_some())
-                || (self.relay_token_verdict == Some(Verdict::Write)
-                    && self.relay_token_writes >= relay_token::WRITE_ATTEMPTS);
-            self.relay_not_ready_text = match (placed, checked) {
-                (true, false) if failed => relay_view::SAVE_CHECK_FAILED_TEXT,
-                (true, false) => relay_view::CHECKING_SAVE_TEXT,
-                _ => relay_view::NOT_READY_TEXT,
-            };
             if self.relay_ready_sent != Some(ready) {
                 self.relay_ready_sent = Some(ready);
                 info!(ready, "[RELAY] Ready sent");
@@ -19586,6 +19620,189 @@ mod tests {
         assert_eq!(penalties(&fx), [2_000, 2_000], "{fx:?}");
     }
 
+    #[test]
+    fn a_flash_of_another_token_on_the_race_save_pays_nothing() {
+        // A load of the race save whose first read finds another value and
+        // whose settled read finds the runner's: no load between the two
+        // reads, no return. A quit-out pending at that exit stays dropped.
+        for quit_out in [false, true] {
+            let t0 = Instant::now();
+            let mut m = token_machine("waiting", true, t0);
+            let mut fx = Vec::new();
+            for at in (0..=1_000).step_by(100) {
+                fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+            }
+            // The load: its IGT a little below the last reading arms a
+            // quit-out, or follows the clock.
+            let igt = if quit_out { 5_500 } else { 6_100 };
+            let loading = FrameSnapshot {
+                igt_ms: Some(igt),
+                ..go_snapshot(1_100, None)
+            };
+            fx.extend(m.tick(tick_in(loading, true, None), t0 + ms(1_100)));
+            assert_eq!(m.pending_quit_out, quit_out);
+            let exit = FrameSnapshot {
+                igt_ms: Some(igt + 16),
+                ..go_snapshot(1_116, roundtable())
+            };
+            fx.extend(m.tick(
+                tick_in(with_token(exit, Some(TOKEN + 1)), true, None),
+                t0 + ms(1_116),
+            ));
+            assert!(m.relay_wrong_token, "{quit_out}");
+            let lift = 1_116 + settle_ms();
+            for at in (1_216..=lift + 3_000).step_by(100) {
+                fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+            }
+            assert!(!m.relay_wrong_token, "{quit_out}");
+            assert!(penalties(&fx).is_empty(), "{quit_out}: {fx:?}");
+            assert!(!m.pending_quit_out, "{quit_out}");
+        }
+    }
+
+    #[test]
+    fn a_return_from_a_save_with_another_igt_seeds_the_guards_and_pays() {
+        // The other character's IGT is far below the race save's (a new
+        // character), a little below it, or far ahead (the IGT guard's own
+        // wrong save, which the race save's load lifts): its load is
+        // classified before its first loaded frame judges the token, so the
+        // guards hold its readings when the race save comes back.
+        for other in [30_000u32, 590_000, 3_000_000] {
+            let t0 = Instant::now();
+            let mut m = token_machine("holder", true, t0);
+            let frame = |m: &mut RaceMachine, at: u64, map: Option<u32>, igt: u32, read| {
+                let snapshot = FrameSnapshot {
+                    igt_ms: Some(igt),
+                    ..go_snapshot(at, map)
+                };
+                m.tick(tick_in(with_token(snapshot, read), true, None), t0 + ms(at))
+            };
+            for at in (0..=1_000).step_by(100) {
+                frame(&mut m, at, Some(IN_ZONE), 600_000 + at as u32, Some(TOKEN));
+            }
+            frame(&mut m, 1_100, None, other, None);
+            for at in (1_200..=4_000).step_by(100) {
+                frame(&mut m, at, Some(IN_ZONE), other + at as u32, Some(0));
+            }
+            assert!(m.relay_wrong_token, "{other}");
+            frame(&mut m, 4_100, None, 600_500, None);
+            let fx = frame(&mut m, 4_200, Some(IN_ZONE), 600_600, Some(TOKEN));
+            assert_eq!(penalties(&fx), [2_000], "{other}: {fx:?}");
+            assert!(!m.wrong_save && !m.relay_wrong_token, "{other}");
+            assert_eq!(m.last_good_igt, Some(600_600), "{other}");
+        }
+    }
+
+    #[test]
+    fn a_blank_save_that_lifts_a_wrong_token_pays_nothing() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", false, t0);
+        let mut fx = Vec::new();
+        // The member's save, its token read, not bound yet: found.
+        for at in (0..=1_000).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        assert!(m.relay_token_found);
+        fx.extend(load_token(&mut m, t0, 1_100, Some(TOKEN + 1)));
+        assert!(m.relay_wrong_token);
+        // A save with no token: the verdict lifts, no return.
+        fx.extend(load_token(&mut m, t0, 1_300, Some(0)));
+        assert!(!m.relay_wrong_token);
+        for at in (1_416..=3_000).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(0)));
+        }
+        assert!(penalties(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_return_while_a_take_waits_pays_nothing() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", true, t0);
+        for at in (0..=1_000).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
+        }
+        load_token(&mut m, t0, 1_100, Some(TOKEN + 1));
+        // A take received on the other save: it waits for the race save.
+        m.handle_message(take("h1"), t0 + ms(1_200));
+        update(&mut m, token_info("holder", Some(TOKEN), true), t0, 1_200);
+        for at in (1_216..=3_016).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), Some(TOKEN + 1));
+        }
+        assert!(m.relay_take_pending() && m.relay_wrong_token);
+        // The race save back: the take's IGT write is to come, no penalty.
+        let mut fx = load_token(&mut m, t0, 3_100, Some(TOKEN));
+        assert!(!m.relay_wrong_token);
+        for at in (3_216..=3_116 + settle_ms() + 1_000).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        assert!(!apply_fx(&fx).is_empty(), "the take starts: {fx:?}");
+        assert!(penalties(&fx).is_empty(), "{fx:?}");
+        assert!(!m
+            .get_status(t0 + ms(3_116))
+            .is_some_and(|s| s.starts_with("Quit-out")));
+    }
+
+    #[test]
+    fn an_ordinary_quit_out_while_a_take_waits_pays_nothing() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        // A quit-out before the take could start: the reloaded IGT a little
+        // below the last reading.
+        rx_frame(&mut m, t0, 1_100, None, LOCAL_IGT - 500, 100, None);
+        assert!(m.pending_quit_out);
+        let fx = rx_frame(&mut m, t0, 1_116, roundtable(), LOCAL_IGT - 484, 100, None);
+        assert!(!m.pending_quit_out);
+        assert!(penalties(&fx).is_empty(), "{fx:?}");
+        assert!(!m
+            .get_status(t0 + ms(1_116))
+            .is_some_and(|s| s.starts_with("Quit-out")));
+    }
+
+    #[test]
+    fn a_return_on_its_exit_frame_tags_the_exit_zone_query() {
+        let t0 = Instant::now();
+        let mut m = token_holder(t0);
+        let mut gate = false;
+        go(&mut m, t0, 1_100, None);
+        zone_frame(&mut m, t0, 1_116, Some(TOKEN + 1), &mut gate);
+        for at in (1_216..=3_016).step_by(100) {
+            zone_frame(&mut m, t0, at, Some(TOKEN + 1), &mut gate);
+        }
+        assert!(m.relay_wrong_token);
+        // The race save back, read on its exit frame.
+        go(&mut m, t0, 3_100, None);
+        let fx = zone_frame(&mut m, t0, 3_116, Some(TOKEN), &mut gate);
+        assert_eq!(penalties(&fx), [2_000], "{fx:?}");
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true), "{fx:?}");
+    }
+
+    #[test]
+    fn a_return_the_settled_read_finds_tags_the_held_exit_zone_query() {
+        let t0 = Instant::now();
+        let mut m = token_holder(t0);
+        let mut gate = false;
+        go(&mut m, t0, 1_100, None);
+        zone_frame(&mut m, t0, 1_116, Some(TOKEN + 1), &mut gate);
+        for at in (1_216..=3_016).step_by(100) {
+            zone_frame(&mut m, t0, at, Some(TOKEN + 1), &mut gate);
+        }
+        // The race save back, its exit frame still reading the other token:
+        // the exit's report is held until the settled read lifts it.
+        go(&mut m, t0, 3_100, None);
+        let exit = 3_116;
+        let mut fx = zone_frame(&mut m, t0, exit, Some(TOKEN + 1), &mut gate);
+        for at in (exit + 100..exit + settle_ms()).step_by(100) {
+            fx.extend(zone_frame(&mut m, t0, at, Some(TOKEN + 1), &mut gate));
+        }
+        let lift = exit + settle_ms();
+        fx.extend(zone_frame(&mut m, t0, lift, Some(TOKEN), &mut gate));
+        assert_eq!(penalties(&fx), [2_000], "{fx:?}");
+        assert_eq!(sent_zone_query_quit_out(&fx), None, "{fx:?}");
+        let fx = zone_frame(&mut m, t0, lift + 100, Some(TOKEN), &mut gate);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(true), "{fx:?}");
+    }
+
     /// A free baton (the hold prompt is offered), the runner's `token`
     /// bound or not.
     fn free_token_info(token: Option<u32>, bound: bool) -> RelayInfo {
@@ -19717,6 +19934,56 @@ mod tests {
         assert_eq!(m.relay_wait_detail(), CHECKING_SAVE_TEXT);
         m.wrong_save = true;
         go_token(&mut m, t0, 3_100, roundtable(), Some(TOKEN));
+        assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
+    }
+
+    #[test]
+    fn a_failed_check_reads_checking_once_the_flags_read_again() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", false, t0);
+        update(&mut m, free_token_info(Some(TOKEN), false), t0, 0);
+        load_token(&mut m, t0, 0, None);
+        let mut at = 116u64;
+        while at <= 5_900 {
+            go_token(&mut m, t0, at, roundtable(), None);
+            at += 100;
+        }
+        assert_eq!(m.relay_wait_detail(), SAVE_CHECK_FAILED_TEXT);
+        // The flags read: no token, written, read back, the binding awaited.
+        let mut wrote = false;
+        while at <= 9_000 {
+            let read = if wrote { Some(TOKEN) } else { Some(0) };
+            let fx = go_token(&mut m, t0, at, roundtable(), read);
+            wrote |= !token_writes(&fx).is_empty();
+            at += 100;
+        }
+        assert!(wrote);
+        assert_eq!(m.relay_token_verdict, Some(Verdict::Confirm));
+        assert_eq!(m.relay_wait_detail(), CHECKING_SAVE_TEXT);
+    }
+
+    #[test]
+    fn the_waiting_line_follows_a_load_made_while_disconnected() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", true, t0);
+        update(&mut m, free_token_info(Some(TOKEN), true), t0, 0);
+        load_token(&mut m, t0, 0, None);
+        for at in (116..=3_016).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), None);
+        }
+        assert_eq!(m.relay_wait_detail(), SAVE_CHECK_FAILED_TEXT);
+        // Told to reload, the runner reloads with the socket down.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(3_050),
+        );
+        let offline = |m: &mut RaceMachine, at: u64, map: Option<u32>, read: Option<u32>| {
+            let snapshot = with_token(go_snapshot(at, map), read);
+            m.tick(tick_in(snapshot, false, None), t0 + ms(at))
+        };
+        offline(&mut m, 3_100, None, None);
+        assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
+        offline(&mut m, 3_116, roundtable(), Some(TOKEN));
         assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
     }
 
