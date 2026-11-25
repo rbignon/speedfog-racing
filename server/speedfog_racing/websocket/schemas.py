@@ -890,7 +890,7 @@ class RelayLootItem(BaseModel):
         """An item with no ash of war goes out as ``{id, qty}``."""
         data: dict[str, Any] = handler(self)
         if self.gem is None:
-            del data["gem"]
+            data.pop("gem", None)
         return data
 
 

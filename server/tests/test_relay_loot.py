@@ -10,7 +10,7 @@ import speedfog_racing.websocket.race.relay_mod as relay_mod_ws
 from speedfog_racing.services.relay import loot_entry, team_loot
 from speedfog_racing.websocket.handler import extract_boss_flags
 from speedfog_racing.websocket.race.relay import relay_boss_name
-from speedfog_racing.websocket.schemas import RelayLootMessage
+from speedfog_racing.websocket.schemas import RelayLootItem, RelayLootMessage
 
 from . import test_integration as _integration
 from .relay_fixtures import (
@@ -172,6 +172,11 @@ def test_a_weapons_ash_of_war_reaches_the_wire_and_no_other_item_carries_the_key
         RelayLootMessage(entries=[entry], paid=False, announce=None).model_dump_json()
     )
     assert wire["entries"][0]["items"] == items
+
+
+def test_an_item_with_no_ash_of_war_dumps_when_none_values_are_excluded():
+    # The dump handed to the item's serializer then has no `gem` key to drop.
+    assert RelayLootItem(id=1, qty=2).model_dump(exclude_none=True) == {"id": 1, "qty": 2}
 
 
 def test_an_entry_paying_no_rune_and_no_item_goes_out_with_a_null_rune_speffect():
