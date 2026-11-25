@@ -13,8 +13,15 @@ pub const MENU_TITLE: &str = "PASS THE BATON";
 /// Replaces a hold prompt or the menu's key hints while a request the
 /// server has not answered is in flight.
 pub const REQUEST_TEXT: &str = "Waiting for the server";
-/// Replaces the take prompt while the runner is not yet ready to take.
+/// Replaces the take prompt while the runner is not yet ready to take: not
+/// at the Roundtable Hold with both locks asserted, or on a wrong save.
 pub const NOT_READY_TEXT: &str = "Not ready yet: wait at the Roundtable Hold.";
+/// Replaces the take prompt while the runner would be ready but for the
+/// verdict of its save's token, still to come.
+pub const CHECKING_SAVE_TEXT: &str = "Not ready yet: checking your save.";
+/// Replaces the take prompt while the runner would be ready but for its
+/// save's token, whose check cannot end by itself.
+pub const SAVE_CHECK_FAILED_TEXT: &str = "Save check failed: reload your save.";
 /// Replaces every key hint while the baton key is unbound (`relay = "none"`
 /// in the config): the player is told what to do, no key is named.
 pub const UNBOUND_TEXT: &str = "No baton key bound: set `relay` in the config";

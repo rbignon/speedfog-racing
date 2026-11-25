@@ -781,6 +781,11 @@ pub struct RaceMachine {
     /// The `relay_ready` value last sent on this socket (`None` = none yet:
     /// readiness does not survive the socket).
     relay_ready_sent: Option<bool>,
+    /// What keeps the runner from being ready, as the waiting banner says it
+    /// in place of the take prompt: decided with that readiness, from the
+    /// same values (`relay_view::NOT_READY_TEXT`, `CHECKING_SAVE_TEXT` or
+    /// `SAVE_CHECK_FAILED_TEXT`).
+    relay_not_ready_text: &'static str,
     /// The holder's gates are locked (the cap), and its banner is due.
     relay_capped: bool,
     relay_cap_due: bool,
@@ -1098,6 +1103,7 @@ impl RaceMachine {
             relay_warp_landings: 0,
             relay_landing_due: false,
             relay_ready_sent: None,
+            relay_not_ready_text: relay_view::NOT_READY_TEXT,
             relay_capped: false,
             relay_cap_due: false,
             relay_release: None,
@@ -1666,14 +1672,19 @@ impl RaceMachine {
 
     /// The waiting banner's last line: the view's, except that a take
     /// request in flight reads `REQUEST_TEXT` and a runner not yet ready to
-    /// take (not at the Roundtable Hold with both locks asserted) reads
-    /// `NOT_READY_TEXT` instead of a hold prompt that would do nothing.
+    /// take reads what keeps it from being ready instead of a hold prompt
+    /// that would do nothing: `NOT_READY_TEXT` (not at the Roundtable Hold
+    /// with both locks asserted, or a wrong save), `CHECKING_SAVE_TEXT` (only
+    /// its save's token to be judged good) or `SAVE_CHECK_FAILED_TEXT` (a
+    /// token check that cannot end by itself).
     pub fn relay_wait_detail(&self) -> &str {
         self.relay_wait_prompt().0
     }
 
     /// The waiting banner's last line and whether it is the hold prompt
-    /// itself (the hold bar goes under it), decided together.
+    /// itself (the hold bar goes under it), decided together. Field reads
+    /// only: the line not ready was chosen with the readiness sent
+    /// (`relay_not_ready_text`).
     fn relay_wait_prompt(&self) -> (&str, bool) {
         let Some(wait) = self.relay_wait_banner() else {
             return ("", false);
@@ -1683,7 +1694,7 @@ impl RaceMachine {
                 return (relay_view::REQUEST_TEXT, false);
             }
             if self.relay_ready_sent != Some(true) {
-                return (relay_view::NOT_READY_TEXT, false);
+                return (self.relay_not_ready_text, false);
             }
         }
         (&wait.detail, wait.hold_bar)
@@ -1697,7 +1708,8 @@ impl RaceMachine {
 
     /// The key hint at the end of the BATON line: the view's, except that
     /// the take hint is shown only while the take is offered (not while the
-    /// banner says "Not ready yet" or "Waiting for the server").
+    /// banner says what keeps the runner from being ready, or "Waiting for
+    /// the server").
     pub fn relay_baton_hint(&self, now: Instant) -> &str {
         let Some(view) = self.relay_view.as_ref() else {
             return "";
@@ -5644,21 +5656,35 @@ impl RaceMachine {
         // Ready: loaded at the Roundtable Hold, both locks raised and written
         // since the last loading exit, on a save that carries the runner's
         // token, bound, as read on a settled frame (or no token drawn yet:
-        // the first status update of a waiting runner's save draws it).
+        // the first status update of a waiting runner's save draws it). The
+        // waiting banner's line not ready is chosen from the same two
+        // halves: the place, or only the token's verdict, still to come or
+        // a check that cannot end by itself (the flags unreadable past the
+        // warn, or the writes spent on a save that still reads none).
         if connected {
-            let ready = waiting_live
+            let placed = waiting_live
                 && self.relay_lock == Some(true)
                 && self.relay_travel_lock == Some(true)
                 && self.relay_asserted
                 && readable
                 && self.save_ok()
-                && self.relay_token_settled
+                && self.relay_warp.is_none()
+                && self.frame_snapshot.map_id == Some(relay::ROUNDTABLE_MAP_ID);
+            let checked = self.relay_token_settled
                 && matches!(
                     self.relay_token_verdict,
                     Some(Verdict::Good | Verdict::NotExpected)
-                )
-                && self.relay_warp.is_none()
-                && self.frame_snapshot.map_id == Some(relay::ROUNDTABLE_MAP_ID);
+                );
+            let ready = placed && checked;
+            let failed = (self.relay_token_unreadable_warned
+                && self.relay_token_retry_at.is_some())
+                || (self.relay_token_verdict == Some(Verdict::Write)
+                    && self.relay_token_writes >= relay_token::WRITE_ATTEMPTS);
+            self.relay_not_ready_text = match (placed, checked) {
+                (true, false) if failed => relay_view::SAVE_CHECK_FAILED_TEXT,
+                (true, false) => relay_view::CHECKING_SAVE_TEXT,
+                _ => relay_view::NOT_READY_TEXT,
+            };
             if self.relay_ready_sent != Some(ready) {
                 self.relay_ready_sent = Some(ready);
                 info!(ready, "[RELAY] Ready sent");
@@ -6461,7 +6487,10 @@ mod tests {
     use super::*;
     use crate::core::relay_loot::LootSnag;
     use crate::core::relay_menu::Unavailable;
-    use crate::core::relay_view::{NOT_READY_TEXT, PULSE_PERIOD, REQUEST_TEXT, RETURNING_TEXT};
+    use crate::core::relay_view::{
+        CHECKING_SAVE_TEXT, NOT_READY_TEXT, PULSE_PERIOD, REQUEST_TEXT, RETURNING_TEXT,
+        SAVE_CHECK_FAILED_TEXT,
+    };
 
     // ------------------------------------------------------------------
     // Harness
@@ -19555,6 +19584,140 @@ mod tests {
             fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
         }
         assert_eq!(penalties(&fx), [2_000, 2_000], "{fx:?}");
+    }
+
+    /// A free baton (the hold prompt is offered), the runner's `token`
+    /// bound or not.
+    fn free_token_info(token: Option<u32>, bound: bool) -> RelayInfo {
+        let mut info = offline_holder_info(0);
+        info.token = token;
+        info.bound = bound;
+        info
+    }
+
+    /// The hold prompt the view holds for a free baton.
+    fn hold_prompt(m: &RaceMachine) -> String {
+        let prompt = m
+            .relay_view()
+            .unwrap()
+            .wait
+            .as_ref()
+            .unwrap()
+            .detail
+            .clone();
+        assert!(prompt.starts_with("Hold F8"), "{prompt}");
+        prompt
+    }
+
+    #[test]
+    fn a_first_binding_reads_checking_your_save_until_the_server_binds_it() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, free_token_info(None, false), t0, 0);
+        let prompt = hold_prompt(&m);
+        for at in (0..=3_000).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), None);
+        }
+        // Ready before any token is drawn: the hold prompt.
+        assert_eq!(m.relay_wait_detail(), prompt);
+        // The token arrives: written, read back and confirmed, then bound
+        // by the server. The save is being checked all along.
+        update(&mut m, free_token_info(Some(TOKEN), false), t0, 3_050);
+        let fx = go_token(&mut m, t0, 3_100, roundtable(), Some(0));
+        assert!(!token_writes(&fx).is_empty() && fx.contains(&ready(false)));
+        assert_eq!(m.relay_wait_detail(), CHECKING_SAVE_TEXT);
+        assert!(!m.relay_wait_hold_bar());
+        let fx = go_token(&mut m, t0, 3_200, roundtable(), Some(TOKEN));
+        assert_eq!(bound_sent(&fx), [TOKEN]);
+        for at in (3_300..=4_000).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
+            assert_eq!(m.relay_wait_detail(), CHECKING_SAVE_TEXT, "{at}");
+        }
+        update(&mut m, free_token_info(Some(TOKEN), true), t0, 4_050);
+        let fx = go_token(&mut m, t0, 4_100, roundtable(), Some(TOKEN));
+        assert!(fx.contains(&ready(true)), "{fx:?}");
+        assert_eq!(m.relay_wait_detail(), prompt);
+        assert!(m.relay_wait_hold_bar());
+    }
+
+    #[test]
+    fn token_flags_unreadable_past_the_warn_read_save_check_failed() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", true, t0);
+        update(&mut m, free_token_info(Some(TOKEN), true), t0, 0);
+        let prompt = hold_prompt(&m);
+        let exit = 16;
+        load_token(&mut m, t0, 0, None);
+        // Before the settle the locks are not asserted yet: a place to reach.
+        for at in (exit + 100..exit + settle_ms()).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), None);
+            assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT, "{at}");
+        }
+        // The settled read does not read either: warned, and failed.
+        let settled = exit + settle_ms();
+        for at in (settled..=settled + 3_000).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), None);
+            assert_eq!(m.relay_wait_detail(), SAVE_CHECK_FAILED_TEXT, "{at}");
+        }
+        // The flags read again: it ends by itself.
+        let mut fx = Vec::new();
+        for at in (settled + 3_100..=settled + 4_000).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        assert!(fx.contains(&ready(true)), "{fx:?}");
+        assert_eq!(m.relay_wait_detail(), prompt);
+    }
+
+    #[test]
+    fn token_writes_spent_read_save_check_failed() {
+        let t0 = Instant::now();
+        let mut m = token_machine("waiting", false, t0);
+        update(&mut m, free_token_info(Some(TOKEN), false), t0, 0);
+        let mut details = Vec::new();
+        let mut writes = 0;
+        for at in (0..=10_000).step_by(100) {
+            let fx = go_token(&mut m, t0, at, roundtable(), Some(0));
+            if !token_writes(&fx).is_empty() {
+                writes += 1;
+                details.push(m.relay_wait_detail().to_string());
+            }
+        }
+        assert_eq!(writes, relay_token::WRITE_ATTEMPTS);
+        // Checking while a write may still take, failed once they are spent.
+        assert!(
+            details.iter().all(|d| d == CHECKING_SAVE_TEXT),
+            "{details:?}"
+        );
+        assert_eq!(m.relay_wait_detail(), SAVE_CHECK_FAILED_TEXT);
+    }
+
+    #[test]
+    fn a_wrong_save_keeps_the_wait_at_the_roundtable_line() {
+        let t0 = Instant::now();
+        // Another character loaded: its token is another's.
+        let mut m = token_machine("waiting", true, t0);
+        update(&mut m, free_token_info(Some(TOKEN), true), t0, 0);
+        for at in (0..=3_000).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
+        }
+        assert_eq!(m.relay_wait_detail(), hold_prompt(&m));
+        load_token(&mut m, t0, 3_100, Some(TOKEN + 1));
+        for at in (3_216..=7_216).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), Some(TOKEN + 1));
+            assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT, "{at}");
+        }
+        assert!(m.relay_wrong_token);
+        // The IGT guard's wrong save, the locks asserted, the token unbound:
+        // the wrong save, not the check, keeps the runner from being ready.
+        let mut m = token_machine("waiting", false, t0);
+        update(&mut m, free_token_info(Some(TOKEN), false), t0, 0);
+        for at in (0..=3_000).step_by(100) {
+            go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
+        }
+        assert_eq!(m.relay_wait_detail(), CHECKING_SAVE_TEXT);
+        m.wrong_save = true;
+        go_token(&mut m, t0, 3_100, roundtable(), Some(TOKEN));
+        assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
     }
 
     #[test]
