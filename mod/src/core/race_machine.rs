@@ -19803,6 +19803,28 @@ mod tests {
         assert_eq!(sent_zone_query_quit_out(&fx), Some(true), "{fx:?}");
     }
 
+    #[test]
+    fn a_flash_leaves_its_held_exit_zone_query_untagged() {
+        let t0 = Instant::now();
+        let mut m = token_holder(t0);
+        let mut gate = false;
+        // A load of the race save: the exit frame reads another value, the
+        // settled frame the runner's. No load between the two reads: the
+        // lift is no return, and the exit it held is not a quit-out's.
+        go(&mut m, t0, 1_100, None);
+        let exit = 1_116;
+        let mut fx = zone_frame(&mut m, t0, exit, Some(TOKEN + 1), &mut gate);
+        for at in (exit + 100..exit + settle_ms()).step_by(100) {
+            fx.extend(zone_frame(&mut m, t0, at, Some(TOKEN + 1), &mut gate));
+        }
+        let lift = exit + settle_ms();
+        fx.extend(zone_frame(&mut m, t0, lift, Some(TOKEN), &mut gate));
+        assert!(penalties(&fx).is_empty(), "{fx:?}");
+        assert_eq!(sent_zone_query_quit_out(&fx), None, "{fx:?}");
+        let fx = zone_frame(&mut m, t0, lift + 100, Some(TOKEN), &mut gate);
+        assert_eq!(sent_zone_query_quit_out(&fx), Some(false), "{fx:?}");
+    }
+
     /// A free baton (the hold prompt is offered), the runner's `token`
     /// bound or not.
     fn free_token_info(token: Option<u32>, bound: bool) -> RelayInfo {
