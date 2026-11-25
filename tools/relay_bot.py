@@ -27,6 +27,8 @@ A console drives the bots:
     boss BOT              the holder kills the boss of its zone (sends its defeat
                           flag)
     pass BOT TO           the holder hands the baton to the teammate named TO
+                          (a bot's username or a display name; every name of
+                          the console ignores case)
     take BOT              a waiting bot asks for the baton (free only after the
                           holder was offline 60 s, or when it left the team)
     offline BOT           close BOT's socket and stay away
@@ -297,7 +299,10 @@ def request_pass(bot: Bot, to_name: str) -> dict[str, Any] | str:
     """The handoff request, or why the bot cannot make it."""
     if not bot.holder:
         return f"{bot.name} does not hold the baton"
-    target = next((m for m in bot.members if m["name"] == to_name), None)
+    # The server names a member by its display name, which Twitch capitalizes
+    # at will: case is ignored.
+    wanted = to_name.casefold()
+    target = next((m for m in bot.members if m["name"].casefold() == wanted), None)
     if target is None:
         return f"no teammate {to_name!r} ({', '.join(m['name'] for m in bot.members)})"
     if target["participant_id"] == bot.participant_id:
@@ -638,10 +643,26 @@ class Console:
     # --- commands ---
 
     def bot(self, name: str) -> Bot | None:
-        found = self.bots.get(name)
+        """The bot of username ``name``, case ignored."""
+        wanted = name.casefold()
+        found = next((b for n, b in self.bots.items() if n.casefold() == wanted), None)
         if found is None:
             log(f"no bot {name!r} ({', '.join(self.bots)})")
         return found
+
+    def member_name(self, bot: Bot, name: str) -> str:
+        """The name ``bot``'s team rows give the teammate called ``name``: a
+        bot's username stands for its display name, which may differ from it
+        in more than case; any other name, or a bot missing from those rows,
+        is kept as typed."""
+        wanted = name.casefold()
+        mate = next((b for n, b in self.bots.items() if n.casefold() == wanted), None)
+        if mate is None:
+            return name
+        row = next(
+            (m for m in bot.members if m["participant_id"] == mate.participant_id), None
+        )
+        return name if row is None else str(row["name"])
 
     async def team_zone(self, bot: Bot) -> str:
         """The team's current zone (a node id)."""
@@ -800,7 +821,9 @@ class Console:
                 elif cmd == "pass" and len(args) == 2:
                     bot = self.bot(args[0])
                     if bot is not None:
-                        await self.send_or_say(bot, request_pass(bot, args[1]))
+                        await self.send_or_say(
+                            bot, request_pass(bot, self.member_name(bot, args[1]))
+                        )
                 elif cmd == "mute" and len(args) == 2 and args[1] in ("on", "off"):
                     bot = self.bot(args[0])
                     if bot is not None:

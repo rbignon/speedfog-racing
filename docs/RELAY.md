@@ -734,7 +734,7 @@ Console commands:
 | `finish BOT`                | The holder sends the seed's finish event from any zone (the server credits the final boss): its team finishes, and the console warns when it is not at the final boss, as that finish proves nothing about the walk |
 | `quit`                      | Leave                                                                                                                                                                                                               |
 
-A walk needs the race to run and the bot to hold the baton. A race needs a relay seed (`Seed.relay`), so a local database whose pools were never regenerated with the relay plugin cannot start one.
+In a console command, a `BOT` is a bot's username and `TO` a bot's username or any member's display name, case ignored (a `--team` names exact usernames). A walk needs the race to run and the bot to hold the baton. A race needs a relay seed (`Seed.relay`), so a local database whose pools were never regenerated with the relay plugin cannot start one.
 
 ## Mod
 

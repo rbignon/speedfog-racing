@@ -15,6 +15,7 @@ from relay_bot import (
     FAKE_STATE,
     FRESH_IGT_MS,
     Bot,
+    Console,
     bound_reply,
     finish_warning,
     load_state,
@@ -270,6 +271,40 @@ def test_pass_needs_the_baton_and_a_named_teammate(bot: Bot) -> None:
     }
     assert isinstance(request_pass(bot, "nobody"), str)
     assert isinstance(request_pass(bot, "me"), str)
+
+
+def test_pass_ignores_the_case_of_a_display_name(bot: Bot) -> None:
+    running(bot, info("holder", members=[member(ME, "me"), member(MATE, "Mate")]))
+    assert request_pass(bot, "MATE") == {
+        "type": "relay_handoff_request",
+        "to_participant_id": MATE,
+    }
+
+
+def test_console_names_ignore_case_and_a_bot_username_stands_for_its_display_name(
+    bot: Bot, clock: Clock
+) -> None:
+    console = Console("race", "ws://x", [], FAKE_STATE)
+    mate = Bot(
+        name="begun_test",
+        participant_id=MATE,
+        mod_token="t2",
+        team_name="Alpha",
+        clock=clock,
+    )
+    console.bots = {"me": bot, "begun_test": mate}
+    running(bot, info("holder", members=[member(ME, "me"), member(MATE, "Бегун")]))
+    assert console.bot("Begun_Test") is mate
+    assert console.member_name(bot, "BEGUN_test") == "Бегун"
+    assert request_pass(bot, console.member_name(bot, "begun_test")) == {
+        "type": "relay_handoff_request",
+        "to_participant_id": MATE,
+    }
+    # A name that is no bot's (the player's own) is kept for request_pass.
+    assert console.member_name(bot, "WoSpins") == "WoSpins"
+    # So is a bot the giver's rows do not list (another team's).
+    running(bot, info("holder", members=[member(ME, "me")]))
+    assert console.member_name(bot, "begun_test") == "begun_test"
 
 
 def test_take_waits_for_the_baton_to_be_free(bot: Bot) -> None:
