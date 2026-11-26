@@ -836,6 +836,26 @@ pub struct RaceMachine {
     /// server then still awaiting it and dropping what it hears first. A
     /// reconnection meanwhile holds its replays (`relay_replay_held`).
     relay_taken_unconfirmed: bool,
+    /// The warp flag of the take in `relay_taken_id`, if it had one: what
+    /// `relay_rewarp_due` raises again.
+    relay_taken_warp: Option<u32>,
+    /// The role turned `Waiting` while that take's `relay_taken` was still
+    /// unconfirmed (the server's take timer freed the baton, or the
+    /// confirmation window ran out on such an update): the runner is sent
+    /// back to, or kept at, the Roundtable Hold, and the place the take gave
+    /// is lost. Ends with the update that makes the runner holder again
+    /// (which arms `relay_rewarp_due`), one naming another holder or none, a
+    /// relay over, or a newer take or acknowledgement.
+    relay_taken_undone: bool,
+    /// The server made the runner holder again once that take was undone:
+    /// its warp is raised again on the first writable frame at the
+    /// Roundtable Hold, once.
+    relay_rewarp_due: bool,
+    /// When a return to the Roundtable Hold was dropped with its flag still
+    /// raised: the seed may have taken it already, and its load land at the
+    /// Hold. Until a loading exit or `relay::WARP_RETRY` after it, a runner
+    /// still away from the Hold does not drop `relay_rewarp_due`.
+    relay_return_dropped_at: Option<Instant>,
     /// The replays of a reconnection, held while the take acknowledged
     /// before it is unconfirmed, until this time at the latest
     /// (`relay::TAKEN_CONFIRM` after the reconnection).
@@ -1155,6 +1175,10 @@ impl RaceMachine {
             relay_taken_due: false,
             relay_confirm_until: None,
             relay_taken_unconfirmed: false,
+            relay_taken_warp: None,
+            relay_taken_undone: false,
+            relay_rewarp_due: false,
+            relay_return_dropped_at: None,
             relay_replay_held: None,
             relay_replay_go: None,
             relay_zone_warp: None,
@@ -1986,6 +2010,7 @@ impl RaceMachine {
             self.relay_passed = None;
             self.relay_passed_banner = None;
             self.relay_returning_since = None;
+            self.relay_rewarp_due = false;
             // No relay, no token to be wrong about. A held exit report was
             // the other save's: no read of the runner's token lifted it.
             if self.relay_wrong_token {
@@ -2070,6 +2095,27 @@ impl RaceMachine {
         if !named_me {
             self.relay_give_up_take(reason);
         }
+        // A take undone by a free baton: once the baton is free, only the
+        // server's acceptance of that take's late `relay_taken` makes the
+        // runner `holder` again without a new take (whose receipt, which
+        // comes before its flip's update, ends the undoing). So the first
+        // update naming the runner holder with its own role `holder` warps it
+        // to the zone again, even while an answer to the take sent again is
+        // due: that answer may be the one the server then ignores. Another
+        // holder or none, or a relay over, ends the undoing.
+        if self.relay_taken_undone {
+            let holder_again = !from_auth
+                && named_me
+                && self
+                    .relay
+                    .as_ref()
+                    .is_some_and(|r| r.role == RelayRole::Holder)
+                && self.relay_take.is_none();
+            if holder_again || !named_me || self.relay_over() {
+                self.relay_taken_undone = false;
+                self.relay_rewarp_due = holder_again && self.relay_taken_warp.is_some();
+            }
+        }
         // A `relay_taken` not confirmed yet: an update naming the runner
         // holder, its own role `holder`, with no take in progress nor
         // answered again, confirms it. Another holder or none, no relay or a
@@ -2153,10 +2199,15 @@ impl RaceMachine {
 
     /// Whether the role turned `Waiting` since `before`: then the zone just
     /// left is dropped (a waiting runner is not in the world its team is
-    /// playing: its exits must not stay on the panel).
+    /// playing: its exits must not stay on the panel). Turned while the
+    /// last take's `relay_taken` is unconfirmed, that take is undone
+    /// (`relay_taken_undone`).
     fn relay_turned_waiting(&mut self, before: Option<RelayRole>) -> bool {
         let turned =
             self.relay_role() == Some(RelayRole::Waiting) && before != Some(RelayRole::Waiting);
+        if turned && self.relay_taken_unconfirmed {
+            self.relay_taken_undone = true;
+        }
         if turned && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
         {
             self.race_state.current_zone = None;
@@ -3381,8 +3432,11 @@ impl RaceMachine {
                     self.relay_confirm_until = None;
                     self.relay_taken_due = false;
                     // A previous take's acknowledgement no longer matters:
-                    // what its replays would carry was just dropped.
+                    // what its replays would carry was just dropped, and
+                    // this take's warp replaces its own.
                     self.relay_taken_unconfirmed = false;
+                    self.relay_taken_undone = false;
+                    self.relay_rewarp_due = false;
                     self.relay_replay_held = None;
                     self.relay_replay_go = None;
                     if self.relay_ready_sent == Some(true) {
@@ -5290,7 +5344,8 @@ impl RaceMachine {
 
     /// HP is read only while the return to the Roundtable Hold may start,
     /// while a take waits for the frame that writes it or the one that
-    /// acknowledges it (not while the shell applies it), or while an entry
+    /// acknowledges it (not while the shell applies it), while a confirmed
+    /// take's warp waits to be raised again (`relay_rewarp_due`), or while an entry
     /// of the team's loot may be handed out (`relay_loot_may_go`; a frame
     /// that reads the token may open its gate) on a frame that follows a
     /// loaded one: the frames of a load after its first, and its exit frame,
@@ -5299,6 +5354,7 @@ impl RaceMachine {
     /// frame's.
     fn relay_wants_hp(&self, now: Instant) -> bool {
         self.relay_warp_may_start(now)
+            || self.relay_rewarp_due
             || self
                 .relay_take
                 .as_ref()
@@ -5567,6 +5623,7 @@ impl RaceMachine {
         if loading_exit {
             self.relay_asserted = false;
             self.relay_warp_given_up = false;
+            self.relay_return_dropped_at = None;
             // Where the load a warp started ended. Any other load (a new
             // character's first, at the Chapel) counts nothing.
             if std::mem::take(&mut self.relay_landing_due) {
@@ -5596,11 +5653,14 @@ impl RaceMachine {
         if !place_bound {
             self.relay_warp_given_up = false;
             if let Some(mut warp) = self.relay_warp.take() {
-                if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), can_write) {
-                    effects.push(Effect::SetGameFlag {
-                        flag_id: flag,
-                        value: false,
-                    });
+                if let Some(WarpStep::Lower(flag)) = warp.abort() {
+                    self.relay_return_dropped_at = Some(now);
+                    if can_write {
+                        effects.push(Effect::SetGameFlag {
+                            flag_id: flag,
+                            value: false,
+                        });
+                    }
                 }
             }
         }
@@ -5858,6 +5918,40 @@ impl RaceMachine {
             }
         }
 
+        // A take the server confirmed after its runner was sent back to the
+        // Roundtable Hold meanwhile (`relay_taken_undone`): its warp again,
+        // as its acknowledgement made it, from a writable frame at the Hold.
+        // A writable frame anywhere else finds a runner that never got there
+        // or left by itself: it keeps its place, unless a return dropped with
+        // its flag raised may still land it at the Hold (until a loading exit
+        // or `relay::WARP_RETRY`). No longer the live holder, or a zone warp
+        // already running, drops it.
+        if self.relay_rewarp_due {
+            let alive = self.frame_snapshot.hp.is_some_and(|hp| hp > 0);
+            let return_may_land = self
+                .relay_return_dropped_at
+                .is_some_and(|at| now.saturating_duration_since(at) < relay::WARP_RETRY);
+            if !self.relay_holder_live() || self.relay_zone_warp.is_some() {
+                self.relay_rewarp_due = false;
+            } else if can_write
+                && !return_may_land
+                && map.is_some_and(|m| m != relay::ROUNDTABLE_MAP_ID)
+            {
+                self.relay_rewarp_due = false;
+                debug!("[RELAY] Warp to the zone not raised again: the runner is away from the Roundtable Hold");
+            } else if can_write && connected && alive && map == Some(relay::ROUNDTABLE_MAP_ID) {
+                self.relay_rewarp_due = false;
+                if let Some(flag) = self.relay_take_warp(flags, self.relay_taken_warp, now, effects)
+                {
+                    info!(
+                        flag,
+                        handoff_id = self.relay_taken_id.as_deref().unwrap_or(""),
+                        "[RELAY] Warp to the zone again: the take's runner was sent back meanwhile"
+                    );
+                }
+            }
+        }
+
         // A take acknowledged already and sent again: answered again,
         // nothing written, the confirmation window opened again. Replays a
         // reconnection held go on the next frame, behind this answer.
@@ -6055,31 +6149,8 @@ impl RaceMachine {
             return;
         };
         crate::profile_span!("relay_take_ack");
-        info!(reason = "take", "[RELAY] Lock lowered");
-        info!(reason = "take", "[RELAY] Travel lock lowered");
-        effects.push(Effect::SetGameFlag {
-            flag_id: flags.lock_flag,
-            value: false,
-        });
-        effects.push(Effect::SetGameFlag {
-            flag_id: flags.travel_lock_flag,
-            value: false,
-        });
-        self.relay_lock = Some(false);
-        self.relay_travel_lock = Some(false);
-        self.relay_asserted = true;
-        self.relay_lock_since = None;
-        self.relay_warp_landings = 0;
-        if let Some(flag) = take.warp_flag {
-            let mut warp = FlagWarp::new(flag);
-            if let Some(WarpStep::Raise(flag)) = warp.tick(true, now) {
-                info!(flag, "[RELAY] Warp to the zone");
-                effects.push(Effect::SetGameFlag {
-                    flag_id: flag,
-                    value: true,
-                });
-            }
-            self.relay_zone_warp = Some(warp);
+        if let Some(flag) = self.relay_take_warp(flags, take.warp_flag, now, effects) {
+            info!(flag, "[RELAY] Warp to the zone");
         }
         // The take before the team's first gate restarts from the Chapel: it
         // carries the Chapel's warp flag (or, from a server that sends none
@@ -6105,6 +6176,9 @@ impl RaceMachine {
             handoff_id: take.handoff_id.clone(),
         });
         self.relay_taken_id = Some(take.handoff_id);
+        self.relay_taken_warp = take.warp_flag;
+        self.relay_taken_undone = false;
+        self.relay_rewarp_due = false;
         self.relay_taken_due = false;
         self.relay_confirm_until = Some(now + relay::TAKEN_CONFIRM);
         self.relay_taken_unconfirmed = true;
@@ -6118,6 +6192,56 @@ impl RaceMachine {
             },
             now,
         );
+    }
+
+    /// A take's warp: the lock and the travel lock lowered and `warp_flag`
+    /// raised on the same frame (T3), the flag kept on until its load starts
+    /// (`relay_zone_warp`, which counts no landing). A lock already written
+    /// down since the last loading exit is not written again. Returns the
+    /// flag raised.
+    fn relay_take_warp(
+        &mut self,
+        flags: RelayFlags,
+        warp_flag: Option<u32>,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) -> Option<u32> {
+        if self.relay_lock != Some(false) || !self.relay_asserted {
+            if self.relay_lock != Some(false) {
+                info!(reason = "take", "[RELAY] Lock lowered");
+            }
+            effects.push(Effect::SetGameFlag {
+                flag_id: flags.lock_flag,
+                value: false,
+            });
+        }
+        if self.relay_travel_lock != Some(false) || !self.relay_asserted {
+            if self.relay_travel_lock != Some(false) {
+                info!(reason = "take", "[RELAY] Travel lock lowered");
+            }
+            effects.push(Effect::SetGameFlag {
+                flag_id: flags.travel_lock_flag,
+                value: false,
+            });
+        }
+        self.relay_lock = Some(false);
+        self.relay_travel_lock = Some(false);
+        self.relay_asserted = true;
+        self.relay_lock_since = None;
+        self.relay_warp_landings = 0;
+        let mut warp = FlagWarp::new(warp_flag?);
+        let raised = match warp.tick(true, now) {
+            Some(WarpStep::Raise(flag)) => {
+                effects.push(Effect::SetGameFlag {
+                    flag_id: flag,
+                    value: true,
+                });
+                Some(flag)
+            }
+            _ => None,
+        };
+        self.relay_zone_warp = Some(warp);
+        raised
     }
 
     /// The shell's answer to `Effect::ApplyRelayFlags`, delivered on the
@@ -18228,6 +18352,263 @@ mod tests {
         // Acknowledged with the first raise, once; the lock stays down.
         assert_eq!(acks(&fx), 0);
         assert!(times_of(&fx, &lock(true)).is_empty());
+    }
+
+    /// After `acknowledged`: the take's warp loads into the zone while the
+    /// server, which never heard its `relay_taken`, frees the baton (its
+    /// timer's update at 1_250); the window over, the runner waits, locked,
+    /// and is sent back to the Roundtable Hold, landing there settled.
+    /// Returns the time of the last frame, at the Hold.
+    fn sent_back_after_the_take(m: &mut RaceMachine, t0: Instant) -> u64 {
+        update(m, timer_info(), t0, 1_250);
+        team(m, t0, 1_300, None, 1_100);
+        let mut at = 1_400;
+        while !team(m, t0, at, Some(IN_ZONE), 1_100).contains(&warp(true)) {
+            at += 100;
+            assert!(at < 30_000, "sent back to the Roundtable Hold");
+        }
+        assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
+        team(m, t0, at + 100, None, 1_100);
+        let settled = at + 200 + settle_ms() + 100;
+        team_over(m, t0, at + 200, settled, roundtable(), 1_100);
+        settled
+    }
+
+    /// The take sent again at `at` + 50 and answered again on the next
+    /// frame, then the server's confirmation at `at` + 150.
+    fn answered_again_and_confirmed(m: &mut RaceMachine, t0: Instant, at: u64, map: Option<u32>) {
+        assert!(m.handle_message(take("h1"), t0 + ms(at + 50)).is_empty());
+        let fx = team(m, t0, at + 100, map, 1_100);
+        assert!(
+            fx.contains(&taken("h1")) && !fx.contains(&zone_warp(true)),
+            "answered again, nothing raised yet: {fx:?}"
+        );
+        update(m, flip_info(), t0, at + 150);
+    }
+
+    #[test]
+    fn a_take_confirmed_after_its_runner_was_sent_back_warps_again() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let at = sent_back_after_the_take(&mut m, t0);
+        answered_again_and_confirmed(&mut m, t0, at, roundtable());
+        // The take's warp again, the locks down on the same frame.
+        let fx = team(&mut m, t0, at + 200, roundtable(), 1_100);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &travel(false), &zone_warp(true)],
+            "{fx:?}"
+        );
+        // Its load, into the zone: raised once, and a later resend of the
+        // same take warps nothing.
+        team(&mut m, t0, at + 300, None, 1_100);
+        let landed = at + 400;
+        let fx = team_over(&mut m, t0, landed, landed + 6_000, Some(IN_ZONE), 1_100);
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+        let later = landed + 6_000;
+        answered_again_and_confirmed(&mut m, t0, later, Some(IN_ZONE));
+        let fx = team_over(&mut m, t0, later + 200, later + 6_000, Some(IN_ZONE), 1_100);
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+        assert!(times_of(&fx, &warp(true)).is_empty(), "{fx:?}");
+    }
+
+    /// A holder's own fast travel from `at`: a loading screen, then frames on
+    /// `map` through the settle and 6 s more. Returns them.
+    fn travel_to(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+    ) -> Vec<(u64, Effect)> {
+        team(m, t0, at, None, 1_100);
+        team_over(m, t0, at + 100, at + 100 + settle_ms() + 6_000, map, 1_100)
+    }
+
+    #[test]
+    fn a_confirmation_read_before_the_answer_again_still_warps_again() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let at = sent_back_after_the_take(&mut m, t0);
+        // The server sends the take again, then confirms at once the first
+        // relay_taken it finally read: both before the next frame.
+        assert!(m.handle_message(take("h1"), t0 + ms(at + 50)).is_empty());
+        update(&mut m, flip_info(), t0, at + 60);
+        // The answer again goes out, which the server then ignores: no
+        // update ever follows it.
+        let fx = team_over(&mut m, t0, at + 100, at + 12_000, roundtable(), 1_100);
+        assert_eq!(times_of(&fx, &taken("h1")), [at + 100], "{fx:?}");
+        let raised = times_of(&fx, &zone_warp(true));
+        assert_eq!(raised.first(), Some(&(at + 100)), "{fx:?}");
+        assert!(times_of(&fx, &lock(true)).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_return_the_seed_already_took_still_warps_again_at_the_hold() {
+        // The return's flag is up when the server confirms the take; the
+        // return is dropped, its flag lowered, but the seed had taken it.
+        let start = |t0: Instant| {
+            let mut m = acknowledged(t0);
+            update(&mut m, timer_info(), t0, 1_250);
+            team(&mut m, t0, 1_300, None, 1_100);
+            let mut at = 1_400;
+            while !team(&mut m, t0, at, Some(IN_ZONE), 1_100).contains(&warp(true)) {
+                at += 100;
+                assert!(at < 30_000, "the return's flag raised");
+            }
+            answered_again_and_confirmed(&mut m, t0, at, Some(IN_ZONE));
+            let fx = team(&mut m, t0, at + 200, Some(IN_ZONE), 1_100);
+            assert!(
+                fx.contains(&warp(false)) && !fx.contains(&zone_warp(true)),
+                "{fx:?}"
+            );
+            (m, at + 200)
+        };
+        let t0 = Instant::now();
+        let (mut m, at) = start(t0);
+        team(&mut m, t0, at + 100, None, 1_100);
+        let fx = team_over(
+            &mut m,
+            t0,
+            at + 200,
+            at + 200 + settle_ms() + 1_000,
+            roundtable(),
+            1_100,
+        );
+        assert_eq!(times_of(&fx, &zone_warp(true)).len(), 1, "{fx:?}");
+
+        // The seed had not taken it: no load within WARP_RETRY, the runner
+        // keeps its place, and a later trip of its own to the Hold warps
+        // nothing.
+        let t0 = Instant::now();
+        let (mut m, at) = start(t0);
+        let retry = crate::core::relay::WARP_RETRY.as_millis() as u64;
+        let mut fx = team_over(&mut m, t0, at + 100, at + retry + 500, Some(IN_ZONE), 1_100);
+        fx.extend(travel_to(&mut m, t0, at + retry + 600, roundtable()));
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_take_answered_again_where_it_left_its_runner_warps_nothing() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        // The warp's load, into the zone; the server heard nothing. Then
+        // the holder travels to the Roundtable Hold by itself.
+        team(&mut m, t0, 1_300, None, 1_100);
+        team_over(&mut m, t0, 1_400, 4_000, Some(IN_ZONE), 1_100);
+        travel_to(&mut m, t0, 4_100, roundtable());
+        let at = 4_200 + settle_ms() + 6_000;
+        answered_again_and_confirmed(&mut m, t0, at, roundtable());
+        let fx = team_over(&mut m, t0, at + 200, at + 12_000, roundtable(), 1_100);
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+        assert!(times_of(&fx, &lock(true)).is_empty(), "{fx:?}");
+        assert_eq!(m.relay_role(), Some(RelayRole::Holder));
+    }
+
+    #[test]
+    fn a_take_confirmed_away_from_the_roundtable_keeps_the_runner_there() {
+        // Confirmed while still in the zone, its return not started yet;
+        // the holder then travels to the Roundtable Hold by itself.
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        update(&mut m, timer_info(), t0, 1_250);
+        team(&mut m, t0, 1_300, None, 1_100);
+        let confirm = crate::core::relay::TAKEN_CONFIRM.as_millis() as u64;
+        let fx = team_over(
+            &mut m,
+            t0,
+            1_400,
+            1_300 + confirm + 500,
+            Some(IN_ZONE),
+            1_100,
+        );
+        assert!(!times_of(&fx, &lock(true)).is_empty(), "waiting: {fx:?}");
+        assert!(times_of(&fx, &warp(true)).is_empty(), "not sent back yet");
+        let at = 1_300 + confirm + 500;
+        answered_again_and_confirmed(&mut m, t0, at, Some(IN_ZONE));
+        let mut fx = team_over(&mut m, t0, at + 200, at + 1_000, Some(IN_ZONE), 1_100);
+        fx.extend(travel_to(&mut m, t0, at + 1_100, roundtable()));
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+        assert!(times_of(&fx, &warp(true)).is_empty(), "{fx:?}");
+
+        // Confirmed at the Hold on a frame the socket is down, then the
+        // runner travels away by itself before a connected frame, and back.
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let at = sent_back_after_the_take(&mut m, t0);
+        answered_again_and_confirmed(&mut m, t0, at, roundtable());
+        let igt = |t: u64| TEAM_IGT + (t - 1_100) as u32;
+        let fx = rx_frame_on(
+            &mut m,
+            t0,
+            at + 200,
+            roundtable(),
+            igt(at + 200),
+            100,
+            None,
+            false,
+        );
+        assert!(
+            !fx.contains(&zone_warp(true)),
+            "not while the socket is down: {fx:?}"
+        );
+        rx_frame_on(&mut m, t0, at + 300, None, igt(at + 300), 100, None, false);
+        let mut fx = Vec::new();
+        let mut t = at + 400;
+        while t <= at + 400 + settle_ms() + 200 {
+            fx.extend(rx_frame_on(
+                &mut m,
+                t0,
+                t,
+                Some(IN_ZONE),
+                igt(t),
+                100,
+                None,
+                false,
+            ));
+            t += 100;
+        }
+        assert!(!fx.contains(&zone_warp(true)), "{fx:?}");
+        let mut fx = team_over(&mut m, t0, t, t + 1_000, Some(IN_ZONE), 1_100);
+        fx.extend(travel_to(&mut m, t0, t + 1_100, roundtable()));
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_newer_take_after_the_return_replaces_the_warp_again() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let at = sent_back_after_the_take(&mut m, t0);
+        // Another take reaches the runner at the Hold: applied and
+        // acknowledged as any take, its own warp raised once.
+        m.handle_message(take("h2"), t0 + ms(at + 50));
+        update(&mut m, flip_info(), t0, at + 50);
+        let fx = team(&mut m, t0, at + 100, roundtable(), 1_100);
+        assert!(!apply_fx(&fx).is_empty(), "the newer take starts: {fx:?}");
+        applied(&mut m, t0, at + 150, "h2");
+        let fx = team_over(&mut m, t0, at + 200, at + 200, roundtable(), at + 100);
+        assert_eq!(times_of(&fx, &taken("h2")), [at + 200], "{fx:?}");
+        assert_eq!(times_of(&fx, &zone_warp(true)), [at + 200], "{fx:?}");
+        // Its warp starts no load and fails at the Hold, then the server
+        // confirms it: the older take's return is no reason to warp again.
+        let retry = crate::core::relay::WARP_RETRY.as_millis() as u64;
+        let failed = at + 400 + 3 * retry;
+        let fx = team_over(&mut m, t0, at + 300, failed, roundtable(), at + 100);
+        assert_eq!(
+            times_of(&fx, &zone_warp(true)).len(),
+            2,
+            "its own retries: {fx:?}"
+        );
+        update(&mut m, flip_info(), t0, failed + 50);
+        let fx = team_over(
+            &mut m,
+            t0,
+            failed + 100,
+            failed + 6_000,
+            roundtable(),
+            at + 100,
+        );
+        assert!(times_of(&fx, &zone_warp(true)).is_empty(), "{fx:?}");
+        assert_eq!(m.relay_role(), Some(RelayRole::Holder));
     }
 
     #[test]
