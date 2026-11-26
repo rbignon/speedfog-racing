@@ -17,8 +17,10 @@
 //! ### Sources
 //!
 //! - Grace flags: `BonfireWarpParam.eventflag_id` (libeldenring's param
-//!   codegen), read once per process. A table that does not read fails no
-//!   capture: it is warned once and left empty (no grace transfers).
+//!   codegen) of every row but row 0, the param's default row (flag 200,
+//!   no grace of the map), read once per process. A table that does not
+//!   read fails no capture: it is warned once and left empty (no grace
+//!   transfers).
 //! - Graces lit: each grace flag through `EventFlagReader::is_flag_set`.
 //! - Flag raises: `EventFlagReader::set_flag_cached`.
 //! - Token: the token flags through `EventFlagReader::is_flag_set_fast` and
@@ -69,14 +71,15 @@ use crate::core::relay_loot::{self, LootOutcome};
 use crate::core::relay_token;
 use crate::profile_span;
 
-/// The grace flags (`core::relay_capture::grace_flag_ids` over the
-/// `eventflag_id` of every `BonfireWarpParam` row), from one pass over the
-/// table at the first call, then kept for the process: the regulation does
-/// not change in a session. A table that does not read (not indexed, or no
-/// usable row) is warned once, with its cause, and kept empty: the states of
-/// the session carry no grace. Waits for the game's params to be indexed (it
-/// forces libeldenring's `PARAMS`, as `race_items::prewarm_params` does):
-/// off the frame thread only.
+/// The grace flags (`core::relay_capture::grace_flag_ids` over the row id
+/// and `eventflag_id` of every `BonfireWarpParam` row, the default row 0
+/// left out), from one pass over the table at the first call, then kept
+/// for the process: the regulation does not change in a session. A table
+/// that does not read (not indexed, or no usable row) is warned once, with
+/// its cause, and kept empty: the states of the session carry no grace.
+/// Waits for the game's params to be indexed (it forces libeldenring's
+/// `PARAMS`, as `race_items::prewarm_params` does): off the frame thread
+/// only.
 pub fn grace_flags() -> &'static [u32] {
     static GRACE_FLAGS: OnceLock<Vec<u32>> = OnceLock::new();
     GRACE_FLAGS.get_or_init(|| {
@@ -84,11 +87,14 @@ pub fn grace_flags() -> &'static [u32] {
         let params = PARAMS.read();
         // SAFETY: the params live for the whole game session and libeldenring
         // casts each row to its generated struct, a reference into the game's
-        // table; one field is copied out of each row and no reference
-        // outlives the pass (as `race_items::param_row`'s callers do).
+        // table; the row id (from the table's index) and one field are
+        // copied out of each row and no reference outlives the pass (as
+        // `race_items::param_row`'s callers do).
         let rows = unsafe { params.iter_param::<BonfireWarpParam>("BonfireWarpParam") };
         match grace_flag_ids(
-            rows.map(|rows| rows.filter_map(|row| row.param.map(|row| row.eventflag_id))),
+            rows.map(|rows| {
+                rows.filter_map(|row| row.param.map(|param| (row.id, param.eventflag_id)))
+            }),
         ) {
             Ok(flags) => {
                 info!(flags = flags.len(), "[RELAY] Grace flags read");

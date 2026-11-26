@@ -890,9 +890,9 @@ impl RaceTracker {
 
     /// The waiting runner's banner, top-centre for as long as it waits (the
     /// giver's "BATON PASSED" first): the title in its tone (fog, brass,
-    /// ember or verdigris), a line (pulsing on "BATON PASSED"), a detail
-    /// and, when the detail is the hold prompt, the hold bar under it. Same
-    /// caching as the menu.
+    /// ember or verdigris), a line (pulsing on "BATON PASSED" and while the
+    /// runner returns to the Roundtable Hold), a detail and, when the detail
+    /// is the hold prompt, the hold bar under it. Same caching as the menu.
     fn render_relay_wait(&self, ui: &hudhook::imgui::Ui, bufs: &mut RenderBuffers) {
         let now = std::time::Instant::now();
         if !self.machine.relay_wait_visible(now) {
@@ -910,6 +910,7 @@ impl RaceTracker {
         let c = &self.cached_colors;
         let [dw, dh] = ui.io().display_size;
         let layout = relay_block_layout([dw, dh], 0);
+        let line = self.machine.relay_wait_line();
         let detail = self.machine.relay_wait_detail();
         let hold_bar = self.machine.relay_wait_hold_bar();
         let progress = self.machine.relay_hold_progress(now).clamp(0.0, 1.0);
@@ -919,7 +920,8 @@ impl RaceTracker {
             BlockTone::Ember => c.danger,
             BlockTone::Verdigris => c.success,
         };
-        // The line pulses on the giver's "BATON PASSED" banner (1.0 otherwise).
+        // The line pulses on the giver's "BATON PASSED" banner and on the
+        // return to the Roundtable Hold (1.0 otherwise).
         let line_alpha = self.machine.relay_wait_line_alpha(now);
         let [r, g, b, a] = c.text;
         let line_color = [r, g, b, a * line_alpha];
@@ -975,13 +977,7 @@ impl RaceTracker {
                 }
                 let _font = ui.push_font(fonts.banner_body);
                 ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
-                cuts.update(
-                    CUT_LINE,
-                    ui,
-                    &wait.line,
-                    layout.text_max_width,
-                    layout.line_px,
-                );
+                cuts.update(CUT_LINE, ui, line, layout.text_max_width, layout.line_px);
                 draw_shadowed(
                     ui,
                     cuts.text(CUT_LINE),

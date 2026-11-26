@@ -26,7 +26,8 @@ pub const SAVE_CHECK_FAILED_TEXT: &str = "Save check failed: reload your save.";
 /// in the config): the player is told what to do, no key is named.
 pub const UNBOUND_TEXT: &str = "No baton key bound: set `relay` in the config";
 /// The line under "BATON PASSED TO <RUNNER>" while the giver is on its way
-/// to the Roundtable Hold.
+/// to the Roundtable Hold, and the plain waiting banner's line while a
+/// waiting runner is (`RaceMachine::relay_wait_line`).
 pub const RETURNING_TEXT: &str = "Returning to the Roundtable Hold...";
 /// One pulse of a pulsing line: full, down to `PULSE_MIN`, full again.
 pub const PULSE_PERIOD: Duration = Duration::from_millis(1200);

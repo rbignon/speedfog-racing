@@ -36,7 +36,7 @@ use crate::core::relay_capture;
 use crate::core::relay_loot::{self, LootOutcome, LootQueue};
 use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
 use crate::core::relay_token::{self, Verdict};
-use crate::core::relay_view::{self, RelayView, WaitBanner};
+use crate::core::relay_view::{self, BlockTone, RelayView, WaitBanner};
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
@@ -807,6 +807,12 @@ pub struct RaceMachine {
     /// The giver's "BATON PASSED" banner, in place of the waiting banner
     /// from the flip until the player is blocked (`PassedBanner`).
     relay_passed_banner: Option<PassedBanner>,
+    /// Since when a waiting runner has been loaded away from the Roundtable
+    /// Hold with its return there still to come (not given up, no take in
+    /// progress): the waiting banner's line then says it is on its way
+    /// back, pulsing from this instant. Decided in `maintain_relay` from the
+    /// frame's facts.
+    relay_returning_since: Option<Instant>,
     /// The `relay_take` received and not yet acknowledged; given up when
     /// the server names another holder or none, the runner's relay ends or
     /// the race stops. There is no local take timeout.
@@ -1120,6 +1126,7 @@ impl RaceMachine {
             relay_checkpoint_due: false,
             relay_passed: None,
             relay_passed_banner: None,
+            relay_returning_since: None,
             relay_take: None,
             relay_apply: None,
             relay_apply_gen: 0,
@@ -1651,12 +1658,43 @@ impl RaceMachine {
         }
     }
 
+    /// The waiting banner's line: `RETURNING_TEXT` on the plain waiting
+    /// banner ("WAITING FOR THE BATON") while the runner is on its way back
+    /// to the Roundtable Hold (`relay_returning_since`), else the banner's
+    /// own (the "BATON PASSED" banner's already says the return).
+    pub fn relay_wait_line(&self) -> &str {
+        if self.relay_returning_line_since().is_some() {
+            return relay_view::RETURNING_TEXT;
+        }
+        self.relay_wait_banner()
+            .map_or("", |wait| wait.line.as_str())
+    }
+
+    /// When the returning line first showed on the plain waiting banner, or
+    /// `None` while that banner reads its own line. The plain waiting banner
+    /// is the view's fog-toned one: the free baton, an offline holder and
+    /// "BATON PASSED" keep their lines.
+    fn relay_returning_line_since(&self) -> Option<Instant> {
+        if self.relay_passed_banner.is_some() {
+            return None;
+        }
+        let since = self.relay_returning_since?;
+        let wait = self.relay_view.as_ref()?.wait.as_ref()?;
+        (wait.tone == BlockTone::Fog).then_some(since)
+    }
+
     /// Opacity of the waiting banner's line at `now`: the "BATON PASSED"
-    /// banner's line pulses, every other line is opaque.
+    /// banner's line and the returning line pulse, every other line is
+    /// opaque.
     pub fn relay_wait_line_alpha(&self, now: Instant) -> f32 {
-        self.relay_passed_banner.as_ref().map_or(1.0, |passed| {
-            relay_view::pulse_alpha(now.saturating_duration_since(passed.since()))
-        })
+        let since = match &self.relay_passed_banner {
+            Some(passed) => passed.since(),
+            None => match self.relay_returning_line_since() {
+                Some(since) => since,
+                None => return 1.0,
+            },
+        };
+        relay_view::pulse_alpha(now.saturating_duration_since(since))
     }
 
     /// The holder's menu is on screen: it wins over the item banner (the
@@ -1924,6 +1962,7 @@ impl RaceMachine {
             self.relay_checkpoint_due = false;
             self.relay_passed = None;
             self.relay_passed_banner = None;
+            self.relay_returning_since = None;
             // No relay, no token to be wrong about. A held exit report was
             // the other save's: no read of the runner's token lifted it.
             if self.relay_wrong_token {
@@ -5627,6 +5666,21 @@ impl RaceMachine {
             .is_some_and(|passed| !still_waiting || passed.over(now))
         {
             self.relay_passed_banner = None;
+        }
+        // A waiting runner loaded away from the Roundtable Hold is on its
+        // way back there (the warp comes once the lock and the gate window
+        // allow it) unless the return is given up, or the save is judged
+        // wrong (no write and no warp until the race save is loaded again):
+        // the waiting banner says so until the Hold is reached.
+        let returning = still_waiting
+            && self.relay_take.is_none()
+            && readable
+            && self.save_ok()
+            && map.is_some_and(|m| m != relay::ROUNDTABLE_MAP_ID)
+            && !self.relay_warp_given_up
+            && self.relay_warp_landings < relay::WARP_LANDINGS_MAX;
+        if returning != self.relay_returning_since.is_some() {
+            self.relay_returning_since = returning.then_some(now);
         }
 
         if let Some(warp) = self.relay_zone_warp.as_mut() {
@@ -15756,6 +15810,133 @@ mod tests {
         go_over(&mut m, t0, 300, 4_200, roundtable());
         assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
         assert_eq!(m.relay_wait_line_alpha(half(4_200)), 1.0);
+    }
+
+    /// The waiting banner's own line (the holder's whereabouts).
+    fn own_line(m: &RaceMachine) -> String {
+        m.relay_wait_banner().unwrap().line.clone()
+    }
+
+    #[test]
+    fn a_new_character_waiting_away_from_the_roundtable_reads_the_return() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        // A New Game made after the start loads at the Chapel.
+        go(&mut m, t0, 1_000, Some(CHAPEL_MAP));
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+        assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+        assert_ne!(own_line(&m), RETURNING_TEXT);
+        // It pulses from the frame it first showed on.
+        let half = t0 + ms(1_000) + PULSE_PERIOD / 2;
+        assert!(m.relay_wait_line_alpha(half) < 0.5);
+        assert!((m.relay_wait_line_alpha(t0 + ms(1_000) + PULSE_PERIOD) - 1.0).abs() < 1e-4);
+        // Through the lock and the gate window, up to the warp.
+        let fx = go_over(&mut m, t0, 1_100, 10_000, Some(CHAPEL_MAP));
+        assert_eq!(times_of(&fx, &warp(true)).len(), 1, "{fx:?}");
+        assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+        // Still anchored at the frame it first showed on, not re-anchored.
+        let later = t0 + ms(1_000) + PULSE_PERIOD * 8 + PULSE_PERIOD / 2;
+        assert!(m.relay_wait_line_alpha(later) < 0.5);
+        // The warp's load, then the Roundtable Hold: the holder's line again.
+        go(&mut m, t0, 10_100, None);
+        go(&mut m, t0, 10_116, roundtable());
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+        assert_eq!(
+            m.relay_wait_line_alpha(t0 + ms(10_116) + PULSE_PERIOD / 2),
+            1.0
+        );
+    }
+
+    #[test]
+    fn the_return_line_ends_when_the_return_is_given_up() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+        // Every raise of the warp flag starts no load: the return is given up.
+        let mut at = 100;
+        while !m.relay_warp_given_up {
+            assert_eq!(m.relay_wait_line(), RETURNING_TEXT, "at {at}");
+            go(&mut m, t0, at, Some(IN_ZONE));
+            at += 100;
+            assert!(at < 40_000, "never given up");
+        }
+        assert_eq!(
+            m.get_status(t0 + ms(at)),
+            Some("Warp to the Roundtable Hold failed")
+        );
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+        assert_eq!(m.relay_wait_line_alpha(t0 + ms(at) + PULSE_PERIOD / 2), 1.0);
+        go_over(&mut m, t0, at, at + 5_000, Some(IN_ZONE));
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+        // A loading exit tries the return again, and the line says so.
+        load_in(&mut m, t0, at + 5_100, IN_ZONE);
+        assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+    }
+
+    #[test]
+    fn the_return_line_ends_when_the_landings_give_up() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        let mut at = 100;
+        for _ in 0..crate::core::relay::WARP_LANDINGS_MAX {
+            assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+            at = run_until_warp(&mut m, t0, at);
+            // The warp's load lands away from the Roundtable Hold.
+            at = load_in(&mut m, t0, at + 100, IN_ZONE) + 100;
+        }
+        assert_eq!(m.relay_wait_line(), own_line(&m), "given up for good");
+        go_over(&mut m, t0, at, at + 10_000, Some(IN_ZONE));
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+    }
+
+    #[test]
+    fn a_wrong_save_away_from_the_roundtable_reads_no_return() {
+        let t0 = Instant::now();
+        // Another character loaded away from the Hold: nothing is written
+        // into it and no warp comes, so no return is announced.
+        let mut m = token_machine("waiting", true, t0);
+        for at in (0..=3_000).step_by(100) {
+            go_token(&mut m, t0, at, Some(IN_ZONE), Some(TOKEN + 1));
+        }
+        assert!(m.relay_wrong_token);
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+        // The race save loaded again: its return comes, and the line says so.
+        go(&mut m, t0, 3_100, None);
+        go_token(&mut m, t0, 3_116, Some(IN_ZONE), Some(TOKEN));
+        go_token(&mut m, t0, 3_216, Some(IN_ZONE), Some(TOKEN));
+        assert!(!m.relay_wrong_token);
+        assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+    }
+
+    #[test]
+    fn the_return_line_is_the_plain_waiting_banners_only() {
+        let t0 = Instant::now();
+        // An offline holder: its banner keeps the countdown.
+        let mut m = relay_machine("waiting", t0);
+        let mut offline = relay_info("waiting");
+        offline.holder_online = false;
+        offline.baton_free_in_s = Some(30);
+        update(&mut m, offline, t0, 0);
+        go(&mut m, t0, 100, Some(IN_ZONE));
+        assert_eq!(wait_title(&m), "KAHLEEYA IS OFFLINE");
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+        // A free baton: its banner keeps why it is free.
+        let mut m = relay_machine("waiting", t0);
+        let mut free = relay_info("waiting");
+        free.baton_free_in_s = Some(0);
+        update(&mut m, free, t0, 0);
+        go(&mut m, t0, 100, Some(IN_ZONE));
+        assert_eq!(wait_title(&m), "THE BATON IS FREE");
+        assert_eq!(m.relay_wait_line(), own_line(&m));
+        // The giver's banner already says the return; a holder reads none.
+        let (m, _) = passed_at(Some(IN_ZONE), 200);
+        assert_eq!(m.relay_wait_line(), RETURNING_TEXT);
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 100, Some(IN_ZONE));
+        assert_eq!(m.relay_wait_line(), "");
     }
 
     #[test]

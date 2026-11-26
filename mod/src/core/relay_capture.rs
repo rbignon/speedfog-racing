@@ -42,15 +42,22 @@ pub enum TableUnread {
     NoUsableRow,
 }
 
-/// The grace flags to scan, from the event flag id of every grace row
-/// (`None`: the table is not indexed): nonzero, sorted, each once.
+/// Row of the grace table that is no grace: a param's default row. The
+/// vanilla one carries event flag 200, which a character has set from its
+/// first second, and shows nowhere on the map.
+pub const DEFAULT_GRACE_ROW: u64 = 0;
+
+/// The grace flags to scan, from the row id and event flag id of every
+/// grace row (`None`: the table is not indexed): the default row left out
+/// (`DEFAULT_GRACE_ROW`), nonzero, sorted, each once.
 pub fn grace_flag_ids(
-    flags: Option<impl IntoIterator<Item = u32>>,
+    rows: Option<impl IntoIterator<Item = (u64, u32)>>,
 ) -> Result<Vec<u32>, TableUnread> {
-    let mut ids: Vec<u32> = flags
+    let mut ids: Vec<u32> = rows
         .ok_or(TableUnread::NotIndexed)?
         .into_iter()
-        .filter(|&flag| flag != 0)
+        .filter(|&(row, flag)| row != DEFAULT_GRACE_ROW && flag != 0)
+        .map(|(_, flag)| flag)
         .collect();
     if ids.is_empty() {
         return Err(TableUnread::NoUsableRow);
@@ -131,15 +138,37 @@ mod tests {
     #[test]
     fn grace_flags_are_nonzero_sorted_and_unique() {
         assert_eq!(
-            grace_flag_ids(Some([76_101, 0, 71_190, 76_101, 0])),
+            grace_flag_ids(Some([
+                (100_000, 76_101),
+                (100_001, 0),
+                (111_000, 71_190),
+                (100_002, 76_101),
+                (100_003, 0),
+            ])),
             Ok(vec![71_190, 76_101])
         );
         assert_eq!(
-            grace_flag_ids(None::<[u32; 0]>),
+            grace_flag_ids(None::<[(u64, u32); 0]>),
             Err(TableUnread::NotIndexed)
         );
-        assert_eq!(grace_flag_ids(Some([0, 0])), Err(TableUnread::NoUsableRow));
+        assert_eq!(
+            grace_flag_ids(Some([(100_000, 0), (100_001, 0)])),
+            Err(TableUnread::NoUsableRow)
+        );
         assert_eq!(grace_flag_ids(Some([])), Err(TableUnread::NoUsableRow));
+    }
+
+    #[test]
+    fn the_default_row_is_no_grace() {
+        // The vanilla table's row 0 carries flag 200: not a grace of the map.
+        assert_eq!(
+            grace_flag_ids(Some([(0, 200), (111_000, 71_190)])),
+            Ok(vec![71_190])
+        );
+        assert_eq!(
+            grace_flag_ids(Some([(0, 200)])),
+            Err(TableUnread::NoUsableRow)
+        );
     }
 
     #[test]
