@@ -222,7 +222,7 @@ The panel is a readout, not a window: it carries no widget and takes no mouse in
 
 #### Relay block
 
-On a relay race the overlay draws one more top-centre block, hanging from the same band as the race item banner (the geometry of its title, without the icon): the holder's baton menu, or a waiting runner's banner, which stays for as long as the runner waits. It is the one keyboard-driven element of the overlay (one key, a tap to move on and a hold to confirm, with a bar that fills), and it still takes no mouse input: the window is click-through like the banner's. Its four tones are the semantic tokens: fog (`purple`) for waiting, brass (`gold`) for the menu and its highlight, ember (`danger`) for a holder gone offline, verdigris (`success`) for the free baton and the filling hold bar. A BATON line in the panel carries the holder, the runner's counter and the key's hint.
+On a relay race the overlay draws one more top-centre block, hanging from the same band as the race item banner (the geometry of its title, without the icon): the holder's baton menu, or a waiting runner's banner, which stays for as long as the runner waits on a loaded character (never over the title screen or a loading screen). It is the one keyboard-driven element of the overlay (one key, a tap to move on and a hold to confirm, with a bar that fills), and it still takes no mouse input: the window is click-through like the banner's. Its four tones are the semantic tokens: fog (`purple`) for waiting, brass (`gold`) for the menu and its highlight, ember (`danger`) for a holder gone offline, verdigris (`success`) for the free baton and the filling hold bar. A BATON line in the panel carries the holder, the runner's counter and the key's hint.
 
 #### Countdown
 

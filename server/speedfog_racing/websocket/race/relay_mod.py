@@ -107,6 +107,10 @@ class RelayModHandler(RaceModHandler):
         # in flight: stored on their row by the commit that applies it to the
         # team (``_record_debug_flags``), so a rejected report stores nothing.
         self._holder_deaths: int | None = None
+        # A stale save is refused at every report, about once a second for as
+        # long as it is loaded: the connection's first refusal warns, the
+        # next ones are debug.
+        self._stale_save_warned = False
         self._message_handlers["relay_ready"] = self._handle_relay_ready
         self._message_handlers["relay_handoff_request"] = self._handle_relay_handoff_request
         self._message_handlers["relay_take_request"] = self._handle_relay_take_request
@@ -413,7 +417,9 @@ class RelayModHandler(RaceModHandler):
         if igt_ms is None:
             return False
         if igt_ms > MAX_FRESH_IGT_MS:
-            logger.warning("Rejected stale save (relay member): %s igt_ms=%d", self.log_ref, igt_ms)
+            log = logger.debug if self._stale_save_warned else logger.warning
+            log("Rejected stale save (relay member): %s igt_ms=%d", self.log_ref, igt_ms)
+            self._stale_save_warned = True
             await self._send_condition(ErrorCode.FRESH_SAVE_REQUIRED)
             return False
         # Written only if the row still has the status read above, without a

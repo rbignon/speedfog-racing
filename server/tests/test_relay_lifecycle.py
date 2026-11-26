@@ -685,8 +685,6 @@ async def test_stale_team_igt_abandons_the_holder_not_the_waiting_runners(sessio
         None,
         True,
     )
-    # The free baton's own 30 minutes start now.
-    assert _aware(team.last_igt_change_at) > _ago(1)
     for pid in waiting:
         assert (await _get(session_maker, Participant, pid)).status == ParticipantStatus.PLAYING
     other = await _get(session_maker, RelayTeam, relay["teams"][1])
@@ -694,28 +692,44 @@ async def test_stale_team_igt_abandons_the_holder_not_the_waiting_runners(sessio
     assert await _public_lines(session_maker, relay["race_id"]) == [
         "Runner 0 has abandoned the race due to inactivity."
     ]
+    # The baton it freed is not timed: the next pass leaves the team alone.
+    assert await monitor.abandon_stale_relay_teams(session_maker) == ([], set())
 
 
-async def test_stale_team_without_holder_is_out(session_maker):
+@pytest.mark.parametrize("nominal_holder", [False, True], ids=["no holder", "nominal holder"])
+async def test_a_free_baton_is_never_timed(session_maker, nominal_holder):
+    # A free baton nobody took for hours, with no holder (theirs went out) or
+    # under a nominal one (a take nobody acknowledged): its members wait.
     relay = await _relay(session_maker)
     team_id = relay["teams"][0]
     await _patch(
         session_maker,
         RelayTeam,
         team_id,
-        holder_id=None,
+        holder_id=relay["members"][0][1] if nominal_holder else None,
         baton_free=True,
-        last_igt_change_at=_ago(31),
+        last_igt_change_at=_ago(240),
     )
 
-    races, abandoned = await monitor.abandon_stale_relay_teams(session_maker)
+    assert await monitor.abandon_stale_relay_teams(session_maker) == ([], set())
+    assert await monitor.abandon_inactive_participants(session_maker) == ([], set())
 
-    assert (races, abandoned) == ([relay["race_id"]], set())
-    team = await _get(session_maker, RelayTeam, team_id)
-    assert team.status == ParticipantStatus.ABANDONED
+    assert (await _get(session_maker, RelayTeam, team_id)).status == ParticipantStatus.PLAYING
     for pid in relay["members"][0]:
-        assert (await _get(session_maker, Participant, pid)).status == ParticipantStatus.ABANDONED
-    assert await _public_lines(session_maker, relay["race_id"]) == ["Team 1 is out."]
+        assert (await _get(session_maker, Participant, pid)).status == ParticipantStatus.PLAYING
+    # Under the baton's locks too: the team read there decides (the take timer
+    # may free the baton of an active holder between the query and the lock).
+    nominal = Participant(id=uuid4(), status=ParticipantStatus.PLAYING)
+    team = RelayTeam(
+        race=Race(status=RaceStatus.RUNNING),
+        baton_free=True,
+        holder_id=nominal.id,
+        members=[nominal],
+    )
+    team.status = ParticipantStatus.PLAYING
+    team.last_igt_change_at = _ago(240)
+    assert monitor._stale_team_out(_ago(30))(team) is None
+    assert nominal.status == ParticipantStatus.PLAYING
 
 
 @pytest.mark.parametrize("index", [0, 1], ids=["holder", "waiting"])
@@ -850,7 +864,9 @@ def test_a_relay_member_is_judged_inactive_again_under_the_locks(
         assert member.status == ParticipantStatus.ABANDONED
 
 
-async def test_a_team_whose_first_holder_never_reported_is_out_in_the_end(session_maker):
+async def test_a_team_whose_first_holder_never_reported_is_out_with_its_last_member(
+    session_maker,
+):
     relay = await _relay(session_maker)
     team_id, (holder, *waiting) = relay["teams"][0], relay["members"][0]
     await _patch(
@@ -865,21 +881,21 @@ async def test_a_team_whose_first_holder_never_reported_is_out_in_the_end(sessio
         created_at=_ago(120),
     )
 
-    # The holder is a no-show: the baton is free, and its 30 minutes start.
+    # The holder is a no-show: the baton is free, and it waits for a taker.
     _, abandoned = await monitor.abandon_inactive_participants(session_maker)
     assert abandoned == {holder}
     team = await _get(session_maker, RelayTeam, team_id)
     assert (team.status, team.holder_id, team.baton_free) == (ParticipantStatus.READY, None, True)
-    assert _aware(team.last_igt_change_at) > _ago(1)
+    assert await monitor.abandon_stale_relay_teams(session_maker) == ([], set())
 
-    # Nobody took it in 30 minutes.
-    await _patch(session_maker, RelayTeam, team_id, last_igt_change_at=_ago(31))
-    races, _ = await monitor.abandon_stale_relay_teams(session_maker)
-
-    assert races == [relay["race_id"]]
-    assert (await _get(session_maker, RelayTeam, team_id)).status == ParticipantStatus.ABANDONED
+    # Its members connected, nobody takes it: the team stays. Once their mods
+    # have been away 30 minutes, they go out, and the team with the last.
     for pid in waiting:
-        assert (await _get(session_maker, Participant, pid)).status == ParticipantStatus.ABANDONED
+        await _patch(session_maker, Participant, pid, last_igt_change_at=_ago(31))
+    races, abandoned = await monitor.abandon_inactive_participants(session_maker)
+
+    assert (races, abandoned) == ([relay["race_id"]], set(waiting))
+    assert (await _get(session_maker, RelayTeam, team_id)).status == ParticipantStatus.ABANDONED
 
 
 async def test_one_failing_relay_member_does_not_stop_the_pass(session_maker, monkeypatch):

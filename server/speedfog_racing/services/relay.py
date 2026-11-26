@@ -222,14 +222,13 @@ def apply_member_out(
     a member who was out already before this change (disqualified after
     abandoning), whose row keeps the snapshot of then. While the team is in
     the race, a baton they held is free at once (no holder, ``baton_free``):
-    no 60 s wait, and nobody gets it automatically. The team's IGT stamp
-    restarts then, so the free baton gets the whole inactivity timeout before
-    the team is out for it. The cap follows on its own (``team_cap`` counts
-    the members who share it). ``disqualified`` puts the team out as DISQUALIFIED,
-    finished or not (what a cheater obtained reached the team); otherwise the
-    team is out (ABANDONED) once no member is left in. A team put out gets its
-    result copied onto its members still in (``copy_team_result``: a
-    disqualified team leaves them abandoned).
+    no 60 s wait, nobody gets it automatically, and no time limit (no
+    inactivity rule times a free baton). The cap follows on its own
+    (``team_cap`` counts the members who share it). ``disqualified`` puts the
+    team out as DISQUALIFIED, finished or not (what a cheater obtained reached
+    the team); otherwise the team is out (ABANDONED) once no member is left in.
+    A team put out gets its result copied onto its members still in
+    (``copy_team_result``: a disqualified team leaves them abandoned).
     """
     if snapshot:
         participant.igt_ms = team.igt_ms
@@ -240,7 +239,6 @@ def apply_member_out(
         team.holder_id = None
         team.holder_offline_since = None
         team.baton_free = True
-        team.last_igt_change_at = datetime.now(UTC)
     if disqualified:
         if team.status != ParticipantStatus.DISQUALIFIED:
             team.status = ParticipantStatus.DISQUALIFIED

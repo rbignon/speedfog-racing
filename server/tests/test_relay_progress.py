@@ -1,5 +1,6 @@
 """Relay progress: only the baton holder is listened to, and what it does goes to its team."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -143,6 +144,18 @@ def test_every_member_passes_the_fresh_save_gate(relay_race, mods):
     waiting.send_status_update(igt_ms=900_000, death_count=0)
     barrier(waiting)
     assert not [m for m in waiting.skipped if m["type"] == "error"]
+
+
+def test_a_stale_save_warns_once_per_connection(relay_race, mods, caplog):
+    waiting = mods[_pid(relay_race, 0, 1)]
+    with caplog.at_level(logging.DEBUG, logger="speedfog_racing.websocket.race.relay_mod"):
+        # Refused at every report, the error sent each time: one warning.
+        for igt_ms in (61_000, 62_000, 63_000):
+            waiting.send_status_update(igt_ms=igt_ms, death_count=0)
+            assert waiting.receive_until("error")["code"] == "fresh_save_required"
+
+    stale = [r for r in caplog.records if r.getMessage().startswith("Rejected stale save")]
+    assert [r.levelno for r in stale] == [logging.WARNING, logging.DEBUG, logging.DEBUG]
 
 
 def test_wrong_save_guard_runs_on_the_team_igt(relay_race, mods):

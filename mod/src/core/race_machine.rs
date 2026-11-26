@@ -1630,8 +1630,13 @@ impl RaceMachine {
     /// The waiting banner is on screen: the runner waits, no menu, no item
     /// banner and no countdown (the fullscreen countdown's ring and the item
     /// banner hang from the same top-centre band, so the banner yields).
+    /// The view's banner also waits for a loaded character (no title screen,
+    /// no loading screen): nothing can be taken from there, and the block
+    /// would cover the game's menu. The giver's "BATON PASSED" banner may
+    /// show over a load: its own rule ends it.
     pub fn relay_wait_visible(&self, now: Instant) -> bool {
         self.relay_wait_banner().is_some()
+            && (self.relay_passed_banner.is_some() || self.frame_snapshot.position_readable)
             && !self.relay_menu.is_open()
             && self.item_banner().is_none()
             && !self.is_countdown_active(now)
@@ -2906,8 +2911,22 @@ impl RaceMachine {
             }
             MachineMessage::Error { message, code } => {
                 self.last_received_debug = Some(format!("error({})", message));
-                warn!(error = %message, code = ?code, "[WS] Error");
-                match code.filter(|k| *k != ConditionKind::Unknown) {
+                let kind = code.filter(|k| *k != ConditionKind::Unknown);
+                // The server sends a coded condition again with each report
+                // it refuses, about once a second, for as long as it holds:
+                // the first receipt of a stretch warns, its repeats are
+                // debug. A stretch ends when the condition expires.
+                let repeat = kind.is_some_and(|kind| {
+                    self.server_condition.as_ref().is_some_and(|c| {
+                        c.kind == kind && now.duration_since(c.last_seen) < SERVER_CONDITION_TTL
+                    })
+                });
+                if repeat {
+                    debug!(error = %message, code = ?code, "[WS] Error again");
+                } else {
+                    warn!(error = %message, code = ?code, "[WS] Error");
+                }
+                match kind {
                     Some(kind) => {
                         self.server_condition = Some(ServerCondition {
                             kind,
@@ -3966,8 +3985,13 @@ impl RaceMachine {
         // penalty into a save that is not the race save: a return the IGT
         // guard still reads as a wrong save pays nothing. None while a relay
         // take is in progress, from its receipt to its acknowledgement: its
-        // IGT write is to come, and would overwrite the penalty.
-        if (quit_out || token_return)
+        // IGT write is to come, and would overwrite the penalty. None while
+        // the runner waits for the baton either: its save's IGT is nobody's
+        // time (the server reads none of it, the next take writes the
+        // team's over it), so a penalty would only show a status for nothing.
+        if (quit_out || token_return) && self.relay_waiting_live() {
+            info!("[RELAY] Quit-out not paid while waiting for the baton");
+        } else if (quit_out || token_return)
             && self.relay_take.is_none()
             && self.save_ok()
             && self.is_race_running()
@@ -8717,6 +8741,50 @@ mod tests {
         );
         assert!(m.get_blocking_condition(now + secs(4)).is_some());
         assert!(m.get_blocking_condition(now + secs(6)).is_none());
+    }
+
+    #[test]
+    fn a_condition_sent_again_warns_once_per_stretch() {
+        let logs = LogCapture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::WARN)
+            .with_ansi(false)
+            .finish();
+        let warned = |l: &LogCapture| l.contents().matches("[WS] Error").count();
+        tracing::subscriber::with_default(subscriber, || {
+            let now = Instant::now();
+            let mut m = running_machine(now);
+            let fresh = || coded_error("Please start a New Game", ConditionKind::FreshSaveRequired);
+            for s in 0..5 {
+                m.handle_message(fresh(), now + secs(s));
+            }
+            assert_eq!(warned(&logs), 1, "one stretch");
+            // Another condition is a stretch of its own.
+            m.handle_message(
+                coded_error("Wrong save loaded", ConditionKind::WrongSave),
+                now + secs(5),
+            );
+            assert_eq!(warned(&logs), 2);
+            // The same condition once it expired (4 s after its last
+            // receipt): a new stretch.
+            m.handle_message(
+                coded_error("Wrong save loaded", ConditionKind::WrongSave),
+                now + secs(9),
+            );
+            assert_eq!(warned(&logs), 3);
+            // An uncoded error warns each time.
+            for s in 10..12 {
+                m.handle_message(
+                    MachineMessage::Error {
+                        message: "Something".to_string(),
+                        code: None,
+                    },
+                    now + secs(s),
+                );
+            }
+            assert_eq!(warned(&logs), 5);
+        });
     }
 
     #[test]
@@ -15619,8 +15687,27 @@ mod tests {
         assert!(fx.contains(&warp(true)), "warped at once: {fx:?}");
         go_over(&mut m, t0, 8_400, 12_100, None);
         assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
+        assert!(m.relay_wait_visible(t0 + ms(12_100)), "shown over the load");
         go(&mut m, t0, 12_200, None);
         assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+        assert!(
+            !m.relay_wait_visible(t0 + ms(12_200)),
+            "the waiting banner waits for the load's end"
+        );
+    }
+
+    #[test]
+    fn the_waiting_banner_waits_for_a_loaded_character() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        // The title screen (or a loading screen): no character loaded.
+        go(&mut m, t0, 0, None);
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+        assert!(!m.relay_wait_visible(t0));
+        go(&mut m, t0, 100, roundtable());
+        assert!(m.relay_wait_visible(t0 + ms(100)));
+        go(&mut m, t0, 200, None);
+        assert!(!m.relay_wait_visible(t0 + ms(200)));
     }
 
     #[test]
@@ -18942,6 +19029,7 @@ mod tests {
     fn the_waiting_banner_yields_to_the_countdown_and_the_item_banner() {
         let t0 = Instant::now();
         let mut m = relay_machine("waiting", t0);
+        go(&mut m, t0, 0, Some(relay::ROUNDTABLE_MAP_ID));
         assert!(m.relay_wait_visible(t0));
         m.race_state.countdown_end = Some(t0 + secs(10));
         assert!(!m.relay_wait_visible(t0 + secs(1)));
@@ -19428,7 +19516,7 @@ mod tests {
     #[test]
     fn a_quit_out_onto_another_token_writes_no_penalty() {
         let t0 = Instant::now();
-        let mut m = token_machine("waiting", true, t0);
+        let mut m = token_machine("holder", true, t0);
         for at in (0..=1_000).step_by(100) {
             go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
         }
@@ -19466,10 +19554,10 @@ mod tests {
             .collect()
     }
 
-    /// A runner whose race save was read (its token found) up to 1 s,
-    /// then another character loaded at 1.1 s and played on to 3 s.
-    fn token_detour(t0: Instant) -> RaceMachine {
-        let mut m = token_machine("waiting", true, t0);
+    /// A runner, `role`, whose race save was read (its token found) up to
+    /// 1 s, then another character loaded at 1.1 s and played on to 3 s.
+    fn token_detour(role: &str, t0: Instant) -> RaceMachine {
+        let mut m = token_machine(role, true, t0);
         for at in (0..=1_000).step_by(100) {
             go_token(&mut m, t0, at, roundtable(), Some(TOKEN));
         }
@@ -19484,7 +19572,7 @@ mod tests {
     #[test]
     fn a_return_from_another_save_pays_one_quit_out() {
         let t0 = Instant::now();
-        let mut m = token_detour(t0);
+        let mut m = token_detour("holder", t0);
         // The race character loaded again: its exit frame reads its token.
         let fx = load_token(&mut m, t0, 3_100, Some(TOKEN));
         assert!(!m.relay_wrong_token);
@@ -19505,12 +19593,52 @@ mod tests {
     }
 
     #[test]
+    fn a_waiting_runner_pays_no_quit_out() {
+        // A waiting runner's IGT is nobody's time: neither a return from
+        // another save nor a quit-out of its own save writes a penalty or
+        // shows one.
+        let t0 = Instant::now();
+        let mut m = token_detour("waiting", t0);
+        let mut fx = load_token(&mut m, t0, 3_100, Some(TOKEN));
+        assert!(!m.relay_wrong_token, "the race save is back");
+        for at in (3_216..=6_216).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+        }
+        // A quit-out: the load reads a little below the last reading.
+        let loading = FrameSnapshot {
+            igt_ms: Some(10_500),
+            ..go_snapshot(6_300, None)
+        };
+        fx.extend(m.tick(tick_in(loading, true, None), t0 + ms(6_300)));
+        assert!(m.pending_quit_out);
+        let exit = FrameSnapshot {
+            igt_ms: Some(10_516),
+            ..go_snapshot(6_316, roundtable())
+        };
+        fx.extend(m.tick(
+            tick_in(with_token(exit, Some(TOKEN)), true, None),
+            t0 + ms(6_316),
+        ));
+        assert!(!m.pending_quit_out, "consumed by the exit");
+        for at in (6_416..=9_416).step_by(100) {
+            fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
+            assert!(
+                !m.get_status(t0 + ms(at))
+                    .is_some_and(|s| s.starts_with("Quit-out")),
+                "{at}"
+            );
+        }
+        assert!(penalties(&fx).is_empty(), "{fx:?}");
+        assert!(fx.contains(&ready(true)), "ready again: {fx:?}");
+    }
+
+    #[test]
     fn a_return_the_settled_read_finds_pays_the_quit_out_there() {
         // The exit frame's read does not read, or still reads the other
         // save's token: the settled frame's read finds the runner's.
         for exit_read in [None, Some(TOKEN + 1)] {
             let t0 = Instant::now();
-            let mut m = token_detour(t0);
+            let mut m = token_detour("holder", t0);
             let exit = 3_116;
             let mut fx = load_token(&mut m, t0, 3_100, exit_read);
             for at in (exit + 100..exit + settle_ms()).step_by(100) {
@@ -19534,7 +19662,7 @@ mod tests {
     #[test]
     fn a_wrong_character_first_after_a_launch_pays_nothing() {
         let t0 = Instant::now();
-        let mut m = token_machine("waiting", true, t0);
+        let mut m = token_machine("holder", true, t0);
         // No read found the runner's token in this process before.
         let mut fx = Vec::new();
         for at in (0..=3_000).step_by(100) {
@@ -19559,14 +19687,14 @@ mod tests {
         // and no read finds the runner's token.
         for lift in ["member out", "token gone", "no relay"] {
             let t0 = Instant::now();
-            let mut m = token_detour(t0);
+            let mut m = token_detour("holder", t0);
             match lift {
                 "member out" => {
-                    let mut info = token_info("waiting", Some(TOKEN), true);
+                    let mut info = token_info("holder", Some(TOKEN), true);
                     set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
                     update(&mut m, info, t0, 3_050);
                 }
-                "token gone" => update(&mut m, token_info("waiting", None, false), t0, 3_050),
+                "token gone" => update(&mut m, token_info("holder", None, false), t0, 3_050),
                 _ => {
                     m.handle_message(relay_auth("running", None), t0 + ms(3_050));
                 }
@@ -19584,7 +19712,7 @@ mod tests {
     #[test]
     fn a_return_the_igt_still_reads_as_a_wrong_save_pays_nothing() {
         let t0 = Instant::now();
-        let mut m = token_detour(t0);
+        let mut m = token_detour("holder", t0);
         // The IGT guard found a wrong save too, and the race save's reading
         // is outside its recovery window.
         m.wrong_save = true;
@@ -19603,7 +19731,7 @@ mod tests {
     #[test]
     fn two_returns_from_another_save_pay_twice() {
         let t0 = Instant::now();
-        let mut m = token_detour(t0);
+        let mut m = token_detour("holder", t0);
         let mut fx = load_token(&mut m, t0, 3_100, Some(TOKEN));
         for at in (3_216..=5_216).step_by(100) {
             fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
@@ -19627,7 +19755,7 @@ mod tests {
         // reads, no return. A quit-out pending at that exit stays dropped.
         for quit_out in [false, true] {
             let t0 = Instant::now();
-            let mut m = token_machine("waiting", true, t0);
+            let mut m = token_machine("holder", true, t0);
             let mut fx = Vec::new();
             for at in (0..=1_000).step_by(100) {
                 fx.extend(go_token(&mut m, t0, at, roundtable(), Some(TOKEN)));
@@ -19696,7 +19824,7 @@ mod tests {
     #[test]
     fn a_blank_save_that_lifts_a_wrong_token_pays_nothing() {
         let t0 = Instant::now();
-        let mut m = token_machine("waiting", false, t0);
+        let mut m = token_machine("holder", false, t0);
         let mut fx = Vec::new();
         // The member's save, its token read, not bound yet: found.
         for at in (0..=1_000).step_by(100) {

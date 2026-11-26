@@ -460,8 +460,11 @@ def test_a_late_relay_taken_takes_the_free_baton_back(monkeypatch, relay_race, m
     monkeypatch.setattr(relay_ws, "RELAY_TAKE_TIMEOUT_S", 0.05)
     giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
     _make_receiver(target)
-    take = _hand_off(giver, target)
+    take = _hand_off(giver, target, igt_ms=5_000)
     target.receive_until("relay_update", lambda m: m["relay"]["baton_free_in_s"] == 0)
+    # The flip 3 minutes ago: the receiver's ack was lost with its socket, and
+    # it reconnects now.
+    patch_team(relay_race, last_igt_change_at=datetime.now(UTC) - timedelta(minutes=3))
 
     target.send({"type": "relay_taken", "handoff_id": take["handoff_id"]})
 
@@ -469,6 +472,12 @@ def test_a_late_relay_taken_takes_the_free_baton_back(monkeypatch, relay_race, m
     assert back["relay"]["baton_free_in_s"] is None
     assert load_team(relay_race).baton_free is False
     barrier(target)
+    # Its game played on since the take's IGT write: the wrong-save guard,
+    # whose wall reference is the flip's stamp, accepts the report.
+    target.send_status_update(igt_ms=5_000 + 120_000, death_count=0)
+    barrier(target)
+    assert load_team(relay_race).igt_ms == 125_000
+    assert not [m for m in target.skipped if m["type"] == "error"]
 
 
 def test_release_not_answered_leaves_the_holder_in_place(monkeypatch, relay_race, mods):

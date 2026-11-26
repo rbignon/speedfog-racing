@@ -22,7 +22,6 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.relay import (
-    abandon_team,
     apply_member_out,
     is_active_member,
     leaderboard_entries,
@@ -194,15 +193,19 @@ async def abandon_stale_relay_teams(
 ) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
     """Relay teams whose IGT went stale, the relay form of the PLAYING branch.
 
-    A team in the race (PLAYING, or READY with a stamp: its first holder never
-    reported, then went out) whose ``last_igt_change_at`` is older than
-    ``INACTIVITY_TIMEOUT`` has its holder abandoned (through ``member_out``:
-    the baton freed, the cap recomputed, the team out when nobody is left),
-    and its stamp restarts, so a free baton gets 30 minutes of its own (as one
-    freed by any holder going out). A team without holder (a free baton nobody
-    took in that time) is out itself. Waiting runners are idle by design: only
-    the team's IGT is watched. The chat lines are posted there. A team whose
-    operation fails is logged and skipped: the others still go.
+    A team in the race (PLAYING, or READY with a stamp: a take before the
+    team's first report) whose holder holds the baton and whose
+    ``last_igt_change_at`` is older than ``INACTIVITY_TIMEOUT`` has its holder
+    abandoned (through ``member_out``: the baton freed, the cap recomputed,
+    the team out when nobody is left). A free baton (no holder, or
+    ``baton_free``) is never timed: nobody plays it, and its members wait for
+    it by design, each going out by the offline rule of
+    ``abandon_inactive_participants`` (the team with the last of them). A
+    baton free because its holder has been offline past the 60 s wait
+    (``baton_free`` still false) stays timed here: that holder goes out, and
+    the baton they leave is then free and untimed. The chat lines are posted
+    there. A team whose operation fails is logged and
+    skipped: the others still go.
 
     Returns (race_ids touched, holders just abandoned). Caller is responsible
     for the auto-finish check and broadcasts.
@@ -218,6 +221,8 @@ async def abandon_stale_relay_teams(
                 .where(
                     Race.status == RaceStatus.RUNNING,
                     RelayTeam.status.in_(_TEAM_IN_RACE),
+                    RelayTeam.holder_id.isnot(None),
+                    RelayTeam.baton_free.is_(False),
                     RelayTeam.last_igt_change_at.isnot(None),
                     RelayTeam.last_igt_change_at < cutoff,
                 )
@@ -252,14 +257,14 @@ def _stale_team_out(
     cutoff: datetime,
 ) -> Callable[[RelayTeam], tuple[Participant | None, bool] | None]:
     """The stale-team rule on the team read under the baton's locks (it may
-    have moved meanwhile). Freeing the holder's baton restarts the team's
-    stamp (``apply_member_out``)."""
+    have moved meanwhile, a free baton taken or one freed)."""
 
     def change(team: RelayTeam) -> tuple[Participant | None, bool] | None:
         since = _utc(team.last_igt_change_at)
         if (
             team.race.status != RaceStatus.RUNNING
             or team.status not in _TEAM_IN_RACE
+            or team.baton_free
             or since is None
             or since >= cutoff
         ):
@@ -268,8 +273,7 @@ def _stale_team_out(
             (m for m in team.members if m.id == team.holder_id and is_active_member(m)), None
         )
         if holder is None:
-            abandon_team(team, team.members)
-            return None, True
+            return None
         holder.status = ParticipantStatus.ABANDONED
         return holder, apply_member_out(team, team.members, holder)
 

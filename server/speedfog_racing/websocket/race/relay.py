@@ -909,7 +909,10 @@ async def confirm_taken(
     """The receiver acknowledges the pending take: the handoff is over, the
     team is told and the leaderboard broadcast. Late (the timer had freed the
     baton and nobody took it since), it clears ``baton_free``: the receiver
-    plays on."""
+    plays on. The team's IGT stamp stays the flip's: it is the wrong-save
+    guard's wall reference too, and a game whose ack was lost with its socket
+    has played on since the take's IGT write (the first report accepted moves
+    the stamp)."""
     async with room.relay_lock:
         async with session_maker() as db:
             loaded = await _locked_team(db, graph_json, participant_id=participant_id)
