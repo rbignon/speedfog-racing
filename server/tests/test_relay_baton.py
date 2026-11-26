@@ -19,6 +19,7 @@ from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
     ModConnection,
     RaceRoom,
+    SpectatorConnection,
     manager,
 )
 from speedfog_racing.websocket.race.relay_mod import RelayModHandler
@@ -1046,6 +1047,43 @@ async def test_a_member_whose_socket_is_removed_loses_its_readiness():
     await rooms.connect_mod(race_id, third, uuid4(), AsyncMock())  # replaced by a new socket
     assert rooms.rooms[race_id].relay_ready == set()
     await asyncio.sleep(0)  # the evicted sockets' background closes
+
+
+async def test_a_replaced_socket_leaving_after_its_replacement_is_not_a_second_departure(
+    monkeypatch,
+):
+    """A ghost's close runs in the background, so its handler can exit after
+    the connection that replaced it has left already (a second drop within
+    the ghost's close timeout). The replacement's exit was the member's: the
+    ghost's must not stamp the member offline again later, which would push
+    back a holder's 60 s wait. A room kept by a spectator lets both exits
+    find it."""
+    rooms = ConnectionManager()
+    race_id, pid, uid = uuid4(), uuid4(), uuid4()
+    monkeypatch.setattr(relay_mod_ws, "manager", rooms)
+    departures: list[bool] = []
+
+    async def changed(session_maker: Any, room: Any, participant_id: UUID, **kw: Any) -> None:
+        departures.append(kw["connected"])
+
+    async def unregister(self: RelayModHandler) -> None:  # the base exit, without its DB work
+        assert self._participant_id is not None
+        await rooms.disconnect_mod(self._race_id, self._participant_id, self.websocket)
+
+    monkeypatch.setattr(relay_mod_ws, "member_connection_changed", changed)
+    monkeypatch.setattr(relay_mod_ws.RaceModHandler, "_on_disconnect", unregister)
+    spectator = SpectatorConnection(websocket=AsyncMock())
+    rooms.get_or_create_room(race_id).spectators = {spectator.connection_id: spectator}
+    ghost, fresh = (RelayModHandler(AsyncMock(), race_id, MagicMock()) for _ in range(2))
+    for handler in (ghost, fresh):
+        handler._participant_id = pid
+        handler._mod_connection = await rooms.connect_mod(race_id, pid, uid, handler.websocket)
+    await asyncio.sleep(0)  # the ghost's background close
+
+    await fresh._on_disconnect()
+    await ghost._on_disconnect()
+
+    assert departures == [False]
 
 
 def test_relay_ready_reports_a_member_waiting_at_the_chapel(relay_race, mods):

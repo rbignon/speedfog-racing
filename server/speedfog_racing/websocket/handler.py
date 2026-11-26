@@ -190,21 +190,28 @@ EVICTED_CLOSE_CODE = 1013
 _eviction_closes: set[asyncio.Task[None]] = set()
 
 
-def close_evicted(websocket: WebSocket) -> None:
+def close_evicted(
+    websocket: WebSocket,
+    code: int = EVICTED_CLOSE_CODE,
+    reason: str = "evicted after failed send",
+    what: str = "evicted connection",
+) -> None:
     """Close a connection just evicted from its room, without waiting for it.
 
     Eviction stops room broadcasts to the connection, but its handler's
     heartbeat would keep the socket alive and the client would silently stop
     receiving updates. Closing makes the client reconnect. The close runs in
-    the background: the handshake with a stalled peer can take seconds and
-    must not hold up the broadcast that detected the failure.
+    the background: the handshake with a stalled peer can take seconds (up to
+    twice the close timeout, 20 s, with a peer that is gone) and must not hold
+    up the caller: the broadcast that detected the failure, or the handler of
+    the new connection that replaced this one (``code`` 4000).
     """
 
     async def _close() -> None:
         try:
-            await websocket.close(code=EVICTED_CLOSE_CODE, reason="evicted after failed send")
+            await websocket.close(code=code, reason=reason)
         except Exception:
-            logger.debug("Failed to close evicted connection", exc_info=True)
+            logger.debug("Failed to close %s", what, exc_info=True)
 
     task = asyncio.create_task(_close())
     _eviction_closes.add(task)

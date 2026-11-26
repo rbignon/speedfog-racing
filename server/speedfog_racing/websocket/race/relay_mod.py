@@ -249,11 +249,16 @@ class RelayModHandler(RaceModHandler):
     async def _on_disconnect(self) -> None:
         """A leaving member is offline from now (the 30 minute inactivity
         rule); a leaving holder also starts the 60 s wait and drops its
-        pending release."""
+        pending release. A connection a newer one replaced is not the member
+        leaving: its close runs in the background (``connect_mod``), so its
+        handler may exit after the replacement has come and gone already,
+        whose own exit was the member's."""
         # Read first: the manager drops a room left without connections.
         room = manager.get_room(self._race_id)
         await super()._on_disconnect()
         if room is None or self._participant_id is None:
+            return
+        if self._mod_connection is not None and self._mod_connection.replaced:
             return
         await self._baton(
             member_connection_changed(

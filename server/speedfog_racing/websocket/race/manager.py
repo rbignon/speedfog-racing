@@ -62,6 +62,9 @@ class ModConnection:
     user_id: uuid.UUID
     locale: str = "en"
     mod_version: str | None = None
+    # A newer connection of the same participant took this one's place
+    # (``connect_mod``): its handler's late exit is not the member leaving.
+    replaced: bool = False
 
 
 @dataclass
@@ -405,35 +408,41 @@ class ConnectionManager:
         websocket: WebSocket,
         locale: str = "en",
         mod_version: str | None = None,
-    ) -> None:
-        """Register a mod connection, replacing any existing one for this participant.
+    ) -> ModConnection:
+        """Register a mod connection, replacing any existing one for this participant,
+        and return it.
 
         If a previous connection exists (likely a ghost after a network drop),
         it is closed with code 4000 so the old handler's receive loop exits.
+        The close runs in the background (``close_evicted``): a ghost's peer
+        is gone, so its handshake waits out the close timeout, and awaiting
+        it here would hold up this new connection's handler, its messages
+        included, for up to 20 s.
         """
         room = self.get_or_create_room(race_id)
         existing = room.mods.get(participant_id)
-        room.mods[participant_id] = ModConnection(
+        connection = ModConnection(
             websocket=websocket,
             participant_id=participant_id,
             user_id=user_id,
             locale=locale,
             mod_version=mod_version,
         )
+        room.mods[participant_id] = connection
         if existing is not None:
+            existing.replaced = True
             # Readiness was the replaced socket's report: the new one sends its own.
             room.relay_ready.discard(participant_id)
             logger.info(f"Mod replaced: race={race_id}, participant={participant_id}")
-            try:
-                await existing.websocket.close(code=4000, reason="replaced by new connection")
-            except Exception:
-                logger.debug(
-                    "Failed to close replaced mod connection: race=%s, participant=%s",
-                    race_id,
-                    participant_id,
-                )
+            close_evicted(
+                existing.websocket,
+                code=4000,
+                reason="replaced by new connection",
+                what=f"replaced mod connection: race={race_id}, participant={participant_id}",
+            )
         else:
             logger.info(f"Mod connected: race={race_id}, participant={participant_id}")
+        return connection
 
     async def disconnect_mod(
         self,

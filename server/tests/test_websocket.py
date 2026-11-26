@@ -1,5 +1,6 @@
 """Tests for WebSocket handlers."""
 
+import asyncio
 import json
 import uuid
 from datetime import datetime
@@ -497,6 +498,7 @@ class TestConnectionManager:
 
         await manager.connect_mod(race_id, participant_id, user_id, ws_old)
         await manager.connect_mod(race_id, participant_id, user_id, ws_new)
+        await asyncio.sleep(0)  # the close runs in the background
 
         # Old websocket got closed with the replacement code
         ws_old.close.assert_awaited_once_with(code=4000, reason="replaced by new connection")

@@ -1,4 +1,5 @@
-"""A connection evicted from its room after a failed send must be closed.
+"""A connection evicted from its room after a failed send, or replaced by its
+client's reconnect, must be closed, without holding up the caller.
 
 Eviction drops the connection from the room, but its handler's heartbeat keeps
 the socket alive: left open, the client would silently stop receiving
@@ -22,6 +23,7 @@ from speedfog_racing.websocket.race.manager import (
     SpectatorConnection,
 )
 from speedfog_racing.websocket.training.manager import (
+    TrainingConnectionManager,
     TrainingModConnection,
     TrainingRoom,
     TrainingSpectatorConnection,
@@ -52,6 +54,12 @@ async def _drain() -> None:
     """Let background close tasks run."""
     for _ in range(3):
         await asyncio.sleep(0)
+
+
+async def _cancel_stalled_closes() -> None:
+    for task in list(handler_module._eviction_closes):
+        task.cancel()  # a stalled handshake would otherwise outlive the test
+    await _drain()
 
 
 def _assert_closed_for_reconnect(ws: _FakeWS) -> None:
@@ -175,9 +183,7 @@ async def test_stalled_close_does_not_hold_the_broadcast():
     await _drain()
 
     assert stalled.close_codes  # close was started, in the background
-    for task in list(handler_module._eviction_closes):
-        task.cancel()  # the stalled handshake would otherwise outlive the test
-    await _drain()
+    await _cancel_stalled_closes()
 
 
 @pytest.mark.asyncio
@@ -277,3 +283,48 @@ async def test_replaced_training_mod_is_not_closed_by_ghost_eviction():
 
     assert room.mod is replacement
     replacement_ws.close.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_ghost_whose_close_stalls_does_not_hold_up_its_replacement():
+    """A reconnect after a network drop replaces a ghost whose peer is gone:
+    its close handshake waits out the close timeout. The new connection must
+    be registered and its handler free at once, the ghost closed with 4000 in
+    the background."""
+    mgr = ConnectionManager()
+    race_id, pid, uid = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    ghost = _FakeWS(hang_on_close=True)
+    fresh = _FakeWS()
+    await mgr.connect_mod(race_id, pid, uid, ghost)  # type: ignore[arg-type]
+
+    await asyncio.wait_for(mgr.connect_mod(race_id, pid, uid, fresh), timeout=1)  # type: ignore[arg-type]
+    await _drain()
+
+    room = mgr.get_room(race_id)
+    assert room is not None
+    assert room.mods[pid].websocket is fresh
+    assert ghost.close_codes == [4000]
+    assert fresh.close_codes == []
+    await _cancel_stalled_closes()
+
+
+@pytest.mark.asyncio
+async def test_a_training_ghost_whose_close_stalls_does_not_hold_up_its_replacement():
+    mgr = TrainingConnectionManager()
+    session_id, uid = uuid.uuid4(), uuid.uuid4()
+    ghost = _FakeWS(hang_on_close=True)
+    fresh = _FakeWS()
+    await mgr.connect_mod(session_id, uid, ghost)  # type: ignore[arg-type]
+
+    connection = await asyncio.wait_for(
+        mgr.connect_mod(session_id, uid, fresh),  # type: ignore[arg-type]
+        timeout=1,
+    )
+    await _drain()
+
+    room = mgr.get_room(session_id)
+    assert room is not None
+    assert room.mod is connection and connection.websocket is fresh
+    assert ghost.close_codes == [4000]
+    assert fresh.close_codes == []
+    await _cancel_stalled_closes()

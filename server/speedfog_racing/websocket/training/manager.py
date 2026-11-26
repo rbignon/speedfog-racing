@@ -110,7 +110,8 @@ class TrainingConnectionManager:
         """Register a mod connection, replacing any existing one, and return it.
 
         If a previous connection exists (likely a ghost after a network drop),
-        it is closed with code 4000 so the old handler's receive loop exits.
+        it is closed with code 4000 so the old handler's receive loop exits,
+        in the background (``close_evicted``), as for a race's mod.
         """
         room = self.get_or_create_room(session_id)
         existing = room.mod
@@ -120,13 +121,12 @@ class TrainingConnectionManager:
         room.mod = connection
         if existing is not None:
             logger.info(f"Mod replaced for training session {session_id}")
-            try:
-                await existing.websocket.close(code=4000, reason="replaced by new connection")
-            except Exception:
-                logger.debug(
-                    "Failed to close replaced training mod connection: session=%s",
-                    session_id,
-                )
+            close_evicted(
+                existing.websocket,
+                code=4000,
+                reason="replaced by new connection",
+                what=f"replaced training mod connection: session={session_id}",
+            )
         else:
             logger.info(f"Mod connected to training session {session_id}")
         return connection

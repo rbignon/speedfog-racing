@@ -77,6 +77,7 @@ from speedfog_racing.websocket.race.items import (
 )
 from speedfog_racing.websocket.race.manager import (
     LeaderboardEntry,
+    ModConnection,
     RaceRoom,
     manager,
     participant_to_info,
@@ -276,6 +277,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         self._cached_graph_json: dict[str, Any] | None = None
         # Detached participant from auth phase, used by _on_authenticated
         self._auth_participant: Participant | None = None
+        # This handler's registry entry, once authenticated (``connect_mod``).
+        self._mod_connection: ModConnection | None = None
 
     @property
     def log_ref(self) -> str:
@@ -543,7 +546,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
     async def _on_authenticated(self) -> None:
         assert self._participant_id is not None
         assert self._user_id is not None
-        await manager.connect_mod(
+        self._mod_connection = await manager.connect_mod(
             self._race_id,
             self._participant_id,
             self._user_id,
