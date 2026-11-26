@@ -896,6 +896,20 @@ pub struct RaceMachine {
     relay_token_writes: u32,
     /// A write of the token awaits the read that tells whether it took.
     relay_token_written: bool,
+    /// A load came since the token was last read, the runner's token
+    /// expected: the save it loads is nobody's yet. The game reads that
+    /// save's IGT and flags seconds before its first loaded frame, where the
+    /// token is read, so meanwhile nothing reports it: no status update, no
+    /// flag poll (whose captures would clear the save's flags in the game,
+    /// send its kills and its finish, or defer its fog flags to be parked
+    /// and sent later), no reconnection rescan. The loading exit's scan,
+    /// made after the exit frame's read, finds what was set during the
+    /// load. Set on every frame not loaded while the token is expected (in
+    /// a new process from the `auth_ok` that brings it); cleared by the read
+    /// that lands, by a settled frame that finds the flags unreadable (the
+    /// save then reported unjudged, as without the hold), and once no token
+    /// is expected (`judge_relay_token`).
+    relay_token_unread: bool,
     /// A read found the runner's token on a save (`Good` or `Confirm`) in
     /// this process, since the token was last drawn for this participant: a
     /// later read that finds it again on a save the token judged wrong is a
@@ -942,8 +956,15 @@ pub struct RaceMachine {
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
-    /// Temporary status message (yellow banner, auto-expires after 3s)
+    /// Temporary status message (yellow banner): the text and when its
+    /// `STATUS_SHOWN_FOR` began.
     pub status_message: Option<(String, Instant)>,
+    /// When the status was set, while it waits for the screen to show the
+    /// world (`screen_shown`): set during a loading screen or its fade, its
+    /// `STATUS_SHOWN_FOR` starts on the first frame that shows the world,
+    /// or `STATUS_UNSEEN_MAX` after it was set (`show_unseen_status`). It is
+    /// shown meanwhile.
+    status_unseen: Option<Instant>,
     /// Update-available notice (gold line, auto-expires after 10s)
     pub update_notice: Option<(String, Instant)>,
     /// Last flag reader status discriminant (for transition logging)
@@ -1153,6 +1174,7 @@ impl RaceMachine {
             relay_token_unreadable_warned: false,
             relay_token_writes: 0,
             relay_token_written: false,
+            relay_token_unread: false,
             relay_token_found: false,
             relay_wrong_across_load: false,
             relay_bound_sent: None,
@@ -1166,6 +1188,7 @@ impl RaceMachine {
             last_flag_poll: now,
             ready_sent: false,
             status_message: None,
+            status_unseen: None,
             update_notice: None,
             last_flag_reader_ok: None,
             pending_zone_update: None,
@@ -2240,10 +2263,14 @@ impl RaceMachine {
         Some((i64::from(cutoff) - i64::from(igt_ms)) / 1000)
     }
 
-    /// Get current status message if still valid (within 3 seconds).
+    /// The status message while it shows: until `STATUS_SHOWN_FOR` has
+    /// passed since the world was first on screen at or after it was set
+    /// (`status_unseen`).
     pub fn get_status(&self, now: Instant) -> Option<&str> {
         self.status_message.as_ref().and_then(|(msg, time)| {
-            if now.duration_since(*time) < Duration::from_secs(3) {
+            if self.status_unseen.is_some()
+                || now.saturating_duration_since(*time) < STATUS_SHOWN_FOR
+            {
                 Some(msg.as_str())
             } else {
                 None
@@ -2413,9 +2440,52 @@ impl RaceMachine {
         })
     }
 
-    /// Set a status message that will be displayed temporarily (3 seconds).
+    /// Set a status message, shown for `STATUS_SHOWN_FOR` from the first
+    /// frame the world is on screen: this one when its snapshot (the last
+    /// frame's) read a screen signal that shows it; otherwise it waits, and
+    /// the next frames read the signals for it (`pre_tick`).
     pub fn set_status(&mut self, message: String, now: Instant) {
         self.status_message = Some((message, now));
+        self.status_unseen = (!self.screen_signal_read() || !self.screen_shown()).then_some(now);
+    }
+
+    /// The frame's snapshot holds a screen signal: the shell reads them only
+    /// on the frames `pre_tick` asks for (`loading`, `blackscreen`).
+    fn screen_signal_read(&self) -> bool {
+        self.frame_snapshot.screen_in_game.is_some() || self.frame_snapshot.loading_screen.is_some()
+    }
+
+    /// The world is on screen: the player is loaded (position readable) and
+    /// no loading screen or fade covers it. The direct screen state
+    /// (CSMenuManImp: in game, no blackscreen fade) when the shell reads it;
+    /// otherwise the legacy loading byte, which a frame that cannot read it
+    /// takes as no loading screen. The zone reveal and the status line wait
+    /// for it.
+    fn screen_shown(&self) -> bool {
+        self.frame_snapshot.position_readable
+            && match self.frame_snapshot.screen_in_game {
+                Some(in_game) => in_game && self.frame_snapshot.blackscreen == Some(false),
+                None => self.frame_snapshot.loading_screen != Some(true),
+            }
+    }
+
+    /// Start the 3 s of a status set while the world was not on screen, on
+    /// the first frame that shows it (`screen_shown`, which takes a loaded
+    /// frame with no readable screen signal as shown, so a build without
+    /// one waits only for the player to be loaded), or once
+    /// `STATUS_UNSEEN_MAX` has passed since it was set (a screen signal
+    /// stuck or a long title screen never holds a status for good). One
+    /// comparison while none waits.
+    fn show_unseen_status(&mut self, now: Instant) {
+        let Some(set_at) = self.status_unseen else {
+            return;
+        };
+        if self.screen_shown() || now.saturating_duration_since(set_at) >= STATUS_UNSEEN_MAX {
+            self.status_unseen = None;
+            if let Some((_, since)) = self.status_message.as_mut() {
+                *since = now;
+            }
+        }
     }
 
     fn refresh_my_participant_index(&mut self) {
@@ -3457,6 +3527,15 @@ impl RaceMachine {
 /// at least this long, so the degraded reveal lands near the loading exit.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// How long a status message shows once the world is on screen.
+const STATUS_SHOWN_FOR: Duration = Duration::from_secs(3);
+
+/// The longest a status set while the world is not on screen waits for it
+/// before its `STATUS_SHOWN_FOR` starts anyway: the zone reveal's bound,
+/// which a load usually outlasts, so a stuck screen signal or a status set
+/// on the title screen still runs out.
+const STATUS_UNSEEN_MAX: Duration = ZONE_REVEAL_TIMEOUT;
+
 /// SoulSplitter's freeze guard: a fade frame only re-writes the frozen IGT
 /// while the game-side creep stays below this; a bigger jump is a
 /// legitimate discontinuity (save load) and re-seeds the baseline instead.
@@ -3517,9 +3596,14 @@ impl RaceMachine {
             // and event-flag polling stay correct with UI hidden and WS down.
             igt: live || !self.event_ids.is_empty(),
             deaths: live,
-            loading: self.pending_zone_update.is_some(),
-            blackscreen: self.freeze_gate_open(now) || self.pending_zone_update.is_some(),
+            // The zone reveal and a status waiting for the world on screen
+            // (`status_unseen`) read the screen signals.
+            loading: self.pending_zone_update.is_some() || self.status_unseen.is_some(),
+            blackscreen: self.freeze_gate_open(now)
+                || self.pending_zone_update.is_some()
+                || self.status_unseen.is_some(),
             poll_flags: self.save_ok()
+                && !self.relay_token_unread
                 && !self.progress_held()
                 && !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
@@ -3706,6 +3790,7 @@ impl RaceMachine {
         now.duration_since(self.last_status_update) >= Duration::from_secs(1)
             && igt_ms > 0
             && self.save_ok()
+            && !self.relay_token_unread
             && !self.progress_held()
             && self.is_race_running()
             && !self.am_i_finished()
@@ -3730,6 +3815,10 @@ impl RaceMachine {
         // frame that acknowledges a take sends no progress after it, and
         // progress resumes with the next one.
         let held = self.progress_held();
+        // A save whose relay token was not read when the frame started sends
+        // no status update on it: the shell asked `wants_status_update`
+        // (and read the weapons, or not) before this frame's read.
+        let token_unread = self.relay_token_unread;
         // An exit report the relay token held back is made on a frame that
         // starts on the race save: its flags were read for it
         // (`wants_flag_reads`, asked before this frame's token is judged).
@@ -3744,6 +3833,7 @@ impl RaceMachine {
             self.advance_boss_reads();
         }
         self.frame_snapshot = input.snapshot;
+        self.show_unseen_status(now);
         // Before anything is decided or sent on this frame's save. A return
         // to the race save from another one is paid as a quit-out below.
         let token_return = self.judge_relay_token(input.connected, now, &mut effects);
@@ -3923,15 +4013,12 @@ impl RaceMachine {
         if self.pending_zone_update.is_some() {
             let pending_for = self.pending_zone_received_at.map(|t| now.duration_since(t));
             let timed_out = pending_for.is_some_and(|d| d >= ZONE_REVEAL_TIMEOUT);
-            let loading_done = match self.frame_snapshot.screen_in_game {
-                // Direct signal (CSMenuManImp): the destination is on
-                // screen when the menu system reports in-game and no fade
-                // covers it. Immune to the world-clock failure modes
-                // (cutscenes, frozen-clock event seeds).
-                Some(in_game) => in_game && self.frame_snapshot.blackscreen == Some(false),
-                // Unmapped build or unreadable chain: legacy proxy.
-                None => self.frame_snapshot.loading_screen != Some(true),
-            };
+            // Direct signal (CSMenuManImp): the destination is on screen
+            // when the menu system reports in-game and no fade covers it,
+            // immune to the world-clock failure modes (cutscenes,
+            // frozen-clock event seeds); the legacy proxy on an unmapped
+            // build or an unreadable chain (`screen_shown`).
+            let loading_done = self.screen_shown();
             if position_readable && (loading_done || timed_out) {
                 let zone = self.pending_zone_update.take().unwrap();
                 let (unused_exits, defeat_flag) = (zone.unused_exits, zone.defeat_flag);
@@ -4252,7 +4339,13 @@ impl RaceMachine {
         if let Some(ok) = input.flag_reader_ok {
             self.last_flag_reader_ok = Some(ok);
         }
-        if poll_due && self.save_ok() && !held {
+        // A save whose relay token is not read yet is not polled at all: a
+        // capture would clear its flags in the game (a write into a save
+        // that may be another character's), send its kills and its finish,
+        // or defer its fog flags to be parked and sent later as the team's.
+        // The loading exit's scan, made after the exit frame's read, finds
+        // what was set during the load.
+        if poll_due && self.save_ok() && !held && !self.relay_token_unread {
             if let Some(ref reads) = input.flag_reads {
                 self.last_flag_poll = now;
 
@@ -4434,8 +4527,13 @@ impl RaceMachine {
 
             // Safety-net rescan: catch any flags still set in memory that polling missed.
             // Its reads were asked before this frame judged the save: a save
-            // judged foreign on this very frame gets nothing from them.
-            let rescan = input.flag_reads.as_ref().filter(|_| self.save_ok());
+            // judged foreign on this very frame gets nothing from them, nor
+            // does a save whose relay token is not read yet (a reconnection
+            // during a load: the loading exit's scan comes after the read).
+            let rescan = input
+                .flag_reads
+                .as_ref()
+                .filter(|_| self.save_ok() && !self.relay_token_unread);
             if let Some(reads) = rescan {
                 for &(flag_id, is_set) in reads {
                     if !is_set || cleared.contains(&flag_id) {
@@ -4516,6 +4614,7 @@ impl RaceMachine {
         // Stop once finished since IGT is frozen at finish time.
         if !quit_out_status_pulled_forward
             && !held
+            && !token_unread
             && self.save_ok()
             && self.wants_status_update(now, igt_ms)
         {
@@ -5269,6 +5368,7 @@ impl RaceMachine {
         effects: &mut Vec<Effect>,
     ) -> bool {
         let Some(relay) = self.relay.as_ref() else {
+            self.relay_token_unread = false;
             return false;
         };
         let asked = self.relay_token_read(now).is_some();
@@ -5282,6 +5382,7 @@ impl RaceMachine {
             self.relay_token_verdict = live.then_some(Verdict::NotExpected);
             self.relay_token_settled = live;
             self.relay_token_due = true;
+            self.relay_token_unread = false;
             let lifted = expected.is_none() || self.relay_over() || !self.is_race_running();
             if self.relay_wrong_token && lifted {
                 self.relay_wrong_token = false;
@@ -5304,6 +5405,7 @@ impl RaceMachine {
             self.relay_token_verdict = None;
             self.relay_token_settled = false;
             self.relay_token_unreadable_warned = false;
+            self.relay_token_unread = true;
             // A wrong verdict carried through a load: what loads now may be
             // the race save.
             self.relay_wrong_across_load = self.relay_wrong_token;
@@ -5319,6 +5421,13 @@ impl RaceMachine {
             // never settled, whatever an older exit says.
             let settled = self.was_position_readable && self.relay_settled(now);
             let Some(read) = self.frame_snapshot.relay_token else {
+                if settled {
+                    // The flags do not read once the load has settled (the
+                    // seed's category not allocated): the hold ends for this
+                    // load, the save reported unjudged as without it, rather
+                    // than the runner silenced for good.
+                    self.relay_token_unread = false;
+                }
                 if settled && !self.relay_token_unreadable_warned {
                     self.relay_token_unreadable_warned = true;
                     warn!("[RELAY] Token flags not readable");
@@ -5332,6 +5441,7 @@ impl RaceMachine {
             self.relay_token_due = false;
             self.relay_token_retry_at = None;
             self.relay_token_settled = settled;
+            self.relay_token_unread = false;
             let after_write = std::mem::take(&mut self.relay_token_written);
             let verdict = relay_token::judge(Some(token), bound, read);
             let found = matches!(verdict, Verdict::Good | Verdict::Confirm);
@@ -8003,6 +8113,80 @@ mod tests {
         assert_eq!(sent_zone_query_quit_out(&fx), Some(true));
         assert_eq!(m.get_status(now), Some("Quit-out: +2s"));
         assert!(!m.pending_quit_out, "latch consumed");
+    }
+
+    /// `snap(Some(igt), true)` with the direct screen signal: in game, a
+    /// fade over it or not.
+    fn snap_faded(igt: u32, fade: bool) -> FrameSnapshot {
+        FrameSnapshot {
+            screen_in_game: Some(true),
+            blackscreen: Some(fade),
+            ..snap(Some(igt), true)
+        }
+    }
+
+    /// `quit_out_cycle` on the direct screen signal, its loading exit (at
+    /// `t0`) under a fade or not. Returns the exit's effects.
+    fn quit_out_exit(m: &mut RaceMachine, t0: Instant, fade: bool) -> Vec<Effect> {
+        m.tick(tick_in(snap_faded(10_000, false), true, None), t0);
+        m.tick(tick_in(snap(None, false), true, None), t0);
+        let mut input = tick_in(snap_faded(8_500, fade), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x0A000000,
+            map_id_str: "m10_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: Some(6100),
+        });
+        m.tick(input, t0)
+    }
+
+    #[test]
+    fn a_status_set_under_a_fade_shows_its_full_time_once_the_world_shows() {
+        let t0 = Instant::now();
+        let mut m = running_machine(t0);
+        assert_eq!(penalty_ms(&quit_out_exit(&mut m, t0, true)), Some(2000));
+        // The loading exit's fade lasts 3.3 s: the status waits under it.
+        for at in (100..=3_300).step_by(100) {
+            m.tick(tick_in(snap_faded(8_500, true), true, None), t0 + ms(at));
+            assert_eq!(m.get_status(t0 + ms(at)), Some("Quit-out: +2s"), "{at}");
+        }
+        // The world shows: its 3 s start there.
+        let shown = t0 + ms(3_400);
+        m.tick(tick_in(snap_faded(8_600, false), true, None), shown);
+        assert_eq!(m.get_status(shown + ms(2_900)), Some("Quit-out: +2s"));
+        assert_eq!(m.get_status(shown + STATUS_SHOWN_FOR), None);
+    }
+
+    #[test]
+    fn a_status_set_with_the_world_shown_counts_from_its_set() {
+        let t0 = Instant::now();
+        let mut m = running_machine(t0);
+        assert_eq!(penalty_ms(&quit_out_exit(&mut m, t0, false)), Some(2000));
+        for at in (100..=3_000).step_by(100) {
+            m.tick(tick_in(snap_faded(8_600, false), true, None), t0 + ms(at));
+        }
+        assert_eq!(m.get_status(t0 + ms(2_900)), Some("Quit-out: +2s"));
+        assert_eq!(m.get_status(t0 + STATUS_SHOWN_FOR), None);
+    }
+
+    #[test]
+    fn a_status_never_waits_past_its_bound_for_the_world() {
+        let t0 = Instant::now();
+        let mut m = running_machine(t0);
+        assert_eq!(penalty_ms(&quit_out_exit(&mut m, t0, true)), Some(2000));
+        // A fade that never lifts (a stuck signal): the status's 3 s start
+        // at the bound anyway, and it goes.
+        let mut at = 100;
+        while at <= 9_000 {
+            m.tick(tick_in(snap_faded(8_500, true), true, None), t0 + ms(at));
+            at += 100;
+        }
+        let bound = t0 + STATUS_UNSEEN_MAX;
+        assert_eq!(m.get_status(bound + ms(2_900)), Some("Quit-out: +2s"));
+        assert_eq!(m.get_status(bound + STATUS_SHOWN_FOR), None);
+        assert_eq!(m.get_status(t0 + ms(9_000)), None);
     }
 
     #[test]
@@ -20266,6 +20450,449 @@ mod tests {
         m.wrong_save = true;
         go_token(&mut m, t0, 3_100, roundtable(), Some(TOKEN));
         assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
+    }
+
+    /// A frame of a save whose IGT reads `igt`, loaded on `map` or not
+    /// (`None`: a loading screen or the title, the IGT still readable), its
+    /// token flags reading `read` and the event flags of `reads` read.
+    fn save_frame(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        igt: u32,
+        read: Option<u32>,
+        reads: Option<Vec<(u32, bool)>>,
+    ) -> Vec<Effect> {
+        let snapshot = FrameSnapshot {
+            igt_ms: Some(igt),
+            ..with_token(go_snapshot(at, map), read)
+        };
+        m.tick(tick_in(snapshot, true, reads), t0 + ms(at))
+    }
+
+    /// The IGT of every status update of `fx`.
+    fn sent_status_igts(fx: &[Effect]) -> Vec<u32> {
+        fx.iter()
+            .filter_map(|e| match e {
+                Effect::SendStatusUpdate { igt_ms, .. } => Some(*igt_ms),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn another_character_loading_reports_nothing_before_its_token_read() {
+        let t0 = Instant::now();
+        let boss = 10_000_800;
+        let mut m = token_machine("holder", true, t0);
+        let mut fx = Vec::new();
+        for at in (0..=3_000).step_by(100) {
+            let igt = 2_000_000 + at as u32;
+            fx.extend(save_frame(
+                &mut m,
+                t0,
+                at,
+                Some(IN_ZONE),
+                igt,
+                Some(TOKEN),
+                None,
+            ));
+        }
+        assert!(!sent_status_igts(&fx).is_empty(), "the race save reports");
+        // Another character loads from the title: the game reads its IGT and
+        // its flags (a boss of the seed it killed) seconds before its first
+        // loaded frame, where its token is read.
+        let mut after = Vec::new();
+        let mut fx = Vec::new();
+        for at in (3_100..=8_000).step_by(100) {
+            let reads = Some(vec![(boss, true)]);
+            fx.extend(save_frame(&mut m, t0, at, None, 20_779, None, reads));
+        }
+        assert!(sent_status_igts(&fx).is_empty(), "{fx:?}");
+        after.extend(fx);
+        // Its first loaded frame reads another token: nothing of it, ever.
+        let mut fx = Vec::new();
+        for at in (8_016..=12_016).step_by(100) {
+            let igt = 20_779 + (at - 8_016) as u32;
+            let reads = Some(vec![(boss, true)]);
+            fx.extend(save_frame(
+                &mut m,
+                t0,
+                at,
+                Some(CHAPEL_MAP),
+                igt,
+                Some(TOKEN + 1),
+                reads,
+            ));
+        }
+        assert!(m.relay_wrong_token);
+        assert!(sent_status_igts(&fx).is_empty(), "{fx:?}");
+        after.extend(fx);
+        // The race save loads again: nothing before its first loaded frame,
+        // whose read lets the reports go from the next frame.
+        let mut fx = Vec::new();
+        for at in (12_100..=15_000).step_by(100) {
+            fx.extend(save_frame(&mut m, t0, at, None, 2_003_000, None, None));
+        }
+        fx.extend(save_frame(
+            &mut m,
+            t0,
+            15_016,
+            Some(IN_ZONE),
+            2_003_000,
+            Some(TOKEN),
+            None,
+        ));
+        assert!(!m.relay_wrong_token);
+        assert!(sent_status_igts(&fx).is_empty(), "{fx:?}");
+        after.extend(fx);
+        let mut fx = Vec::new();
+        for at in (15_116..=16_216).step_by(100) {
+            let igt = 2_003_000 + (at - 15_016) as u32;
+            fx.extend(save_frame(
+                &mut m,
+                t0,
+                at,
+                Some(IN_ZONE),
+                igt,
+                Some(TOKEN),
+                None,
+            ));
+        }
+        assert!(!sent_status_igts(&fx).is_empty(), "{fx:?}");
+        after.extend(fx);
+        // The other character's kill never reached the team.
+        assert!(!sent_flags(&after).contains(&boss), "{after:?}");
+        assert!(m.flag_buffer.iter().all(|(flag, _)| *flag != boss));
+    }
+
+    #[test]
+    fn a_new_process_reports_nothing_until_its_first_token_read() {
+        let t0 = Instant::now();
+        let mut m = token_machine("holder", true, t0);
+        // The title screen and the load: the IGT reads, no frame is loaded.
+        let mut fx = Vec::new();
+        for at in (0..=5_000).step_by(100) {
+            fx.extend(save_frame(&mut m, t0, at, None, 3_744_000, None, None));
+        }
+        assert!(sent_status_igts(&fx).is_empty(), "{fx:?}");
+        let fx = save_frame(
+            &mut m,
+            t0,
+            5_016,
+            Some(IN_ZONE),
+            3_744_000,
+            Some(TOKEN),
+            None,
+        );
+        assert!(sent_status_igts(&fx).is_empty(), "{fx:?}");
+        let mut fx = Vec::new();
+        for at in (5_116..=6_216).step_by(100) {
+            let igt = 3_744_000 + (at - 5_016) as u32;
+            fx.extend(save_frame(
+                &mut m,
+                t0,
+                at,
+                Some(IN_ZONE),
+                igt,
+                Some(TOKEN),
+                None,
+            ));
+        }
+        assert!(!sent_status_igts(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn without_a_token_a_load_reports_as_before() {
+        let t0 = Instant::now();
+        // A relay race with no token drawn, and a race without relay.
+        for mut m in [relay_machine("holder", t0), running_machine(t0)] {
+            let mut fx = Vec::new();
+            for at in (0..=3_000).step_by(100) {
+                fx.extend(go(&mut m, t0, at, None));
+            }
+            assert!(!sent_status_igts(&fx).is_empty(), "{fx:?}");
+        }
+    }
+
+    /// A frame as the shell builds it (`dll/tracker.rs`): the screen
+    /// signals only when `pre_tick` asks for them, the token flags only when
+    /// asked and loaded. `map` `None` is a loading screen or the title (the
+    /// IGT still readable), `fade` a fade over a loaded frame; `reads` are
+    /// the event flags the frame reads.
+    #[allow(clippy::too_many_arguments)]
+    fn shell_frame(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        igt: u32,
+        token: Option<u32>,
+        fade: bool,
+        reads: Option<Vec<(u32, bool)>>,
+    ) -> Vec<Effect> {
+        let now = t0 + ms(at);
+        let needs = m.pre_tick(now, true, true);
+        let mut snapshot = FrameSnapshot {
+            igt_ms: Some(igt),
+            ..go_snapshot(at, map)
+        };
+        snapshot.relay_token = needs.relay_token.filter(|_| map.is_some()).and(token);
+        snapshot.loading_screen = needs.loading.then_some(map.is_none() || fade);
+        (snapshot.screen_in_game, snapshot.blackscreen) = if needs.blackscreen {
+            (Some(map.is_some()), Some(map.is_some() && fade))
+        } else {
+            (None, None)
+        };
+        m.tick(tick_in(snapshot, true, reads), now)
+    }
+
+    /// `token_machine("holder", true)` playing on the race save for 3 s.
+    fn holder_on_its_save(t0: Instant) -> RaceMachine {
+        let mut m = token_machine("holder", true, t0);
+        for at in (0..=3_000).step_by(100) {
+            let igt = 2_000_000 + at as u32;
+            shell_frame(&mut m, t0, at, Some(IN_ZONE), igt, Some(TOKEN), false, None);
+        }
+        m
+    }
+
+    /// K2's character loads over `[from, from + 4 900]` (no frame loaded,
+    /// its IGT read, `reads` read on each frame), then plays 4 s judged
+    /// wrong; then the race save loads again, its first loaded frame (under
+    /// a fade when `fade`) returned. Every frame's effects go to `fx`.
+    fn detour_through_k2(
+        m: &mut RaceMachine,
+        t0: Instant,
+        reads: Option<Vec<(u32, bool)>>,
+        fade: bool,
+        fx: &mut Vec<Effect>,
+    ) -> u64 {
+        for at in (3_100..=8_000).step_by(100) {
+            fx.extend(shell_frame(
+                m,
+                t0,
+                at,
+                None,
+                20_779,
+                None,
+                false,
+                reads.clone(),
+            ));
+        }
+        for at in (8_016..=12_016).step_by(100) {
+            let igt = 20_779 + (at - 8_016) as u32;
+            fx.extend(shell_frame(
+                m,
+                t0,
+                at,
+                Some(CHAPEL_MAP),
+                igt,
+                Some(TOKEN + 1),
+                false,
+                None,
+            ));
+        }
+        assert!(m.relay_wrong_token);
+        for at in (12_100..=15_000).step_by(100) {
+            fx.extend(shell_frame(m, t0, at, None, 2_003_000, None, false, None));
+        }
+        fx.extend(shell_frame(
+            m,
+            t0,
+            15_016,
+            Some(IN_ZONE),
+            2_003_000,
+            Some(TOKEN),
+            fade,
+            None,
+        ));
+        assert!(!m.relay_wrong_token);
+        15_016
+    }
+
+    #[test]
+    fn a_return_under_a_fade_shows_its_quit_out_once_the_fade_lifts() {
+        let t0 = Instant::now();
+        let mut m = holder_on_its_save(t0);
+        let mut fx = Vec::new();
+        let back = detour_through_k2(&mut m, t0, None, true, &mut fx);
+        assert_eq!(penalty_ms(&fx), Some(2000), "{fx:?}");
+        // The return's fade lasts 3.3 s (K5): the status waits under it.
+        let mut at = back + 100;
+        while at <= back + 3_300 {
+            shell_frame(
+                &mut m,
+                t0,
+                at,
+                Some(IN_ZONE),
+                2_005_000,
+                Some(TOKEN),
+                true,
+                None,
+            );
+            assert_eq!(m.get_status(t0 + ms(at)), Some("Quit-out: +2s"), "{at}");
+            at += 100;
+        }
+        let shown = at;
+        shell_frame(
+            &mut m,
+            t0,
+            shown,
+            Some(IN_ZONE),
+            2_005_100,
+            Some(TOKEN),
+            false,
+            None,
+        );
+        assert_eq!(m.get_status(t0 + ms(shown + 2_900)), Some("Quit-out: +2s"));
+        assert_eq!(m.get_status(t0 + ms(shown) + STATUS_SHOWN_FOR), None);
+    }
+
+    #[test]
+    fn a_waiting_status_has_the_screen_signals_read_for_it() {
+        let t0 = Instant::now();
+        // No race running (no freeze gate, no zone to reveal): nothing else
+        // asks for the screen signals.
+        let mut m = RaceMachine::new(1, String::new(), false, t0);
+        shell_frame(&mut m, t0, 0, Some(IN_ZONE), 1_000, None, true, None);
+        m.set_status("Server connected".to_string(), t0 + ms(10));
+        let needs = m.pre_tick(t0 + ms(100), true, true);
+        assert!(needs.blackscreen && needs.loading);
+        let mut at = 100;
+        while at <= 3_300 {
+            shell_frame(&mut m, t0, at, Some(IN_ZONE), 1_000, None, true, None);
+            assert_eq!(m.get_status(t0 + ms(at)), Some("Server connected"), "{at}");
+            at += 100;
+        }
+        shell_frame(&mut m, t0, at, Some(IN_ZONE), 1_000, None, false, None);
+        assert_eq!(m.get_status(t0 + ms(at + 2_900)), Some("Server connected"));
+        assert!(!m.pre_tick(t0 + ms(at + 100), true, true).blackscreen);
+    }
+
+    #[test]
+    fn a_fog_flag_of_another_characters_load_is_never_the_teams() {
+        let t0 = Instant::now();
+        let fog = 1_050_294_007;
+        let mut m = holder_on_its_save(t0);
+        // The shell is asked no poll during the hold.
+        let _ = shell_frame(&mut m, t0, 3_050, None, 20_779, None, false, None);
+        assert!(!m.pre_tick(t0 + ms(3_100), true, true).poll_flags);
+        let mut fx = Vec::new();
+        detour_through_k2(&mut m, t0, Some(vec![(fog, true)]), false, &mut fx);
+        // Nothing written into K2's game, nothing kept for later.
+        assert!(
+            !fx.iter().any(|e| matches!(
+                e,
+                Effect::SetGameFlag { flag_id, value: false } if *flag_id == fog
+            )),
+            "{fx:?}"
+        );
+        assert!(m.flag_buffer.iter().all(|(flag, _)| *flag != fog));
+        // A reconnection carries nothing of it either.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(16_000),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(16_050),
+        );
+        fx.extend(shell_frame(
+            &mut m,
+            t0,
+            16_116,
+            Some(IN_ZONE),
+            2_004_100,
+            Some(TOKEN),
+            false,
+            None,
+        ));
+        assert!(!sent_flags(&fx).contains(&fog), "{fx:?}");
+    }
+
+    #[test]
+    fn a_reconnection_during_a_load_rescans_nothing_before_the_read() {
+        let t0 = Instant::now();
+        let (fog, boss) = (1_050_294_007, 10_000_800);
+        let mut m = holder_on_its_save(t0);
+        for at in (3_100..=4_000).step_by(100) {
+            shell_frame(&mut m, t0, at, None, 20_779, None, false, None);
+        }
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(4_010),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(4_020),
+        );
+        assert!(m.relay_token_unread);
+        let reads = Some(vec![(fog, true), (boss, true)]);
+        let fx = shell_frame(&mut m, t0, 4_100, None, 20_779, None, false, reads);
+        assert!(sent_flags(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn the_finish_found_during_a_load_waits_for_the_read() {
+        let t0 = Instant::now();
+        let finish = 1_050_294_999;
+        let mut m = holder_on_its_save(t0);
+        m.finish_event = Some(finish);
+        // A load of the race save whose flags show the finish (a seed's
+        // last gate): nothing goes during the load.
+        let mut fx = Vec::new();
+        for at in (3_100..=5_000).step_by(100) {
+            let reads = Some(vec![(finish, true)]);
+            fx.extend(shell_frame(
+                &mut m, t0, at, None, 2_003_000, None, false, reads,
+            ));
+        }
+        assert!(!sent_flags(&fx).contains(&finish), "{fx:?}");
+        // Its first loaded frame reads the runner's token: the finish goes.
+        let mut fx = Vec::new();
+        for at in (5_016..=6_016).step_by(100) {
+            let reads = Some(vec![(finish, true)]);
+            let igt = 2_003_000 + (at - 5_016) as u32;
+            fx.extend(shell_frame(
+                &mut m,
+                t0,
+                at,
+                Some(IN_ZONE),
+                igt,
+                Some(TOKEN),
+                false,
+                reads,
+            ));
+        }
+        assert!(sent_flags(&fx).contains(&finish), "{fx:?}");
+    }
+
+    #[test]
+    fn unreadable_token_flags_end_the_hold_once_the_load_settles() {
+        let t0 = Instant::now();
+        let mut m = holder_on_its_save(t0);
+        // A gate's load of the race save, then its token flags do not read.
+        for at in (3_100..=5_000).step_by(100) {
+            shell_frame(&mut m, t0, at, None, 2_003_000, None, false, None);
+        }
+        let settled = 5_016 + settle_ms();
+        let mut before = Vec::new();
+        let mut after = Vec::new();
+        let mut at = 5_016;
+        while at <= settled + 3_000 {
+            let igt = 2_003_000 + (at - 5_016) as u32;
+            let fx = shell_frame(&mut m, t0, at, Some(IN_ZONE), igt, None, false, None);
+            if at < settled {
+                before.extend(fx);
+            } else {
+                after.extend(fx);
+            }
+            at += 100;
+        }
+        assert!(sent_status_igts(&before).is_empty(), "{before:?}");
+        assert!(!sent_status_igts(&after).is_empty(), "{after:?}");
     }
 
     #[test]
