@@ -996,6 +996,10 @@ pub struct RaceMachine {
     /// reveal timeout and the one-shot stall-warn diagnostic
     pub pending_zone_received_at: Option<Instant>,
     /// Snapshot of current_layer taken when leaderboard_update bumps the layer.
+    /// Not taken while the runner waits on a relay (`RelayRole::Waiting`):
+    /// its row is the team's, which a teammate moves, and no reveal of its
+    /// own will come to release it; dropped when the role turns waiting
+    /// (`relay_turned_waiting`).
     pub pre_reveal_layer: Option<i32>,
     /// One-shot latch for the stall-warn diagnostic, reset on each
     /// zone_update receipt
@@ -2199,14 +2203,18 @@ impl RaceMachine {
 
     /// Whether the role turned `Waiting` since `before`: then the zone just
     /// left is dropped (a waiting runner is not in the world its team is
-    /// playing: its exits must not stay on the panel). Turned while the
-    /// last take's `relay_taken` is unconfirmed, that take is undone
-    /// (`relay_taken_undone`).
+    /// playing: its exits must not stay on the panel), and so is a layer
+    /// frozen for a reveal that will not come (`pre_reveal_layer`). Turned
+    /// while the last take's `relay_taken` is unconfirmed, that take is
+    /// undone (`relay_taken_undone`).
     fn relay_turned_waiting(&mut self, before: Option<RelayRole>) -> bool {
         let turned =
             self.relay_role() == Some(RelayRole::Waiting) && before != Some(RelayRole::Waiting);
         if turned && self.relay_taken_unconfirmed {
             self.relay_taken_undone = true;
+        }
+        if turned {
+            self.pre_reveal_layer = None;
         }
         if turned && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
         {
@@ -2858,8 +2866,10 @@ impl RaceMachine {
                 debug!(count = participants.len(), "[WS] Leaderboard update");
                 // Snapshot current_layer before it gets bumped by the new
                 // participants list, so the UI keeps the old X/Y and tier
-                // until the zone name is revealed.
-                if self.pre_reveal_layer.is_none() {
+                // until the zone name is revealed. A runner waiting on a
+                // relay reveals nothing: its team's layer shows at once.
+                let waiting = self.relay_role() == Some(RelayRole::Waiting);
+                if self.pre_reveal_layer.is_none() && !waiting {
                     if let Some(my_id) = self.my_row_id() {
                         let old_layer = self
                             .race_state
@@ -2928,8 +2938,10 @@ impl RaceMachine {
                 self.race_state.race = Some(race);
             }
             MachineMessage::PlayerUpdate(player) => {
-                // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
-                if self.pre_reveal_layer.is_none() {
+                // Snapshot current_layer on increase (same rationale as
+                // LeaderboardUpdate, a relay's waiting runner excepted).
+                let waiting = self.relay_role() == Some(RelayRole::Waiting);
+                if self.pre_reveal_layer.is_none() && !waiting {
                     if let Some(my_id) = self.my_row_id() {
                         if player.id == my_id {
                             if let Some(old_me) = self.my_participant() {
@@ -14577,6 +14589,86 @@ mod tests {
             now,
         );
         assert_eq!(m.pre_reveal_layer, Some(2));
+    }
+
+    /// A relay machine in `role` whose team row starts on layer 0 (of the
+    /// seed's 3), so a rise shows on the panel's fraction.
+    fn relay_machine_on_layer_0(role: &str, now: Instant) -> RaceMachine {
+        let mut auth = relay_auth("running", Some(relay_info(role)));
+        if let MachineMessage::AuthOk { participants, .. } = &mut auth {
+            participants[0].current_layer = 0;
+        }
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth, now);
+        m
+    }
+
+    #[test]
+    fn a_waiting_runner_reads_its_teams_new_layer_at_once() {
+        // A teammate moves the team row; no reveal of the waiting runner's
+        // own is coming to release a frozen layer, so none is frozen.
+        let now = Instant::now();
+        let rises = [
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![
+                    test_participant("t1", "playing", 1),
+                    test_participant("t2", "playing", 1),
+                ],
+                leader_splits: None,
+            },
+            MachineMessage::PlayerUpdate(test_participant("t1", "playing", 1)),
+        ];
+        for rise in rises {
+            let mut m = relay_machine_on_layer_0("waiting", now);
+            assert_eq!(m.relay_layer(), Some((1, 3)));
+            m.handle_message(rise, now + ms(10));
+            assert_eq!(m.pre_reveal_layer, None);
+            assert_eq!(m.my_participant().unwrap().current_layer, 1);
+            assert_eq!(m.relay_layer(), Some((2, 3)));
+        }
+    }
+
+    #[test]
+    fn a_runner_out_of_a_team_still_playing_reads_its_teams_new_layer_at_once() {
+        // Out while the team plays on: the relay is over for the runner, so
+        // no reveal of its own will ever come; its role still reads waiting.
+        let now = Instant::now();
+        let mut info = relay_info("waiting");
+        set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+        let mut auth = relay_auth("running", Some(info));
+        if let MachineMessage::AuthOk { participants, .. } = &mut auth {
+            participants[0].current_layer = 0;
+        }
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth, now);
+        assert!(m.relay_over());
+
+        m.handle_message(
+            MachineMessage::PlayerUpdate(test_participant("t1", "playing", 1)),
+            now + ms(10),
+        );
+        assert_eq!(m.pre_reveal_layer, None);
+        assert_eq!(m.relay_layer(), Some((2, 3)));
+    }
+
+    #[test]
+    fn a_layer_frozen_while_holding_is_dropped_when_the_role_turns_waiting() {
+        // Handed off before the reveal: the reveal will not come.
+        let now = Instant::now();
+        let mut m = relay_machine_on_layer_0("holder", now);
+        m.handle_message(
+            MachineMessage::PlayerUpdate(test_participant("t1", "playing", 1)),
+            now + ms(10),
+        );
+        assert_eq!(m.pre_reveal_layer, Some(0));
+        assert_eq!(m.relay_layer(), Some((1, 3)), "frozen while holding");
+
+        m.handle_message(
+            MachineMessage::RelayUpdate(relay_info("waiting")),
+            now + ms(20),
+        );
+        assert_eq!(m.pre_reveal_layer, None);
+        assert_eq!(m.relay_layer(), Some((2, 3)));
     }
 
     #[test]

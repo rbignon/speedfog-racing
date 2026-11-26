@@ -144,7 +144,7 @@ The loading byte at `[[EventFlagMan]+0x28]+0x113` (the CE table's "In cut-scene/
 
 Historical note: between 2026-07-13 and 2026-07-15 reveals used a grace-based condition instead (position continuously readable for 1s), assuming the visible loading screen always ends a fixed ~0.9s after the position becomes readable. In-game verification showed that tail is variable (often much longer), which revealed zones while the loading screen was still displayed; the byte-based condition was restored with the timeout reduced from 15s to 5s.
 
-The overlay keeps showing the old zone until the reveal. A `pre_reveal_layer` snapshot freezes the X/Y counter and tier display so they don't leak the new layer before the zone name updates. Last-writer-wins: if two flags fire in rapid succession, only the last `zone_update` is shown.
+The overlay keeps showing the old zone until the reveal. A `pre_reveal_layer` snapshot freezes the X/Y counter and tier display so they don't leak the new layer before the zone name updates. On a relay race, where the row is the team's, a runner waiting for the baton takes no snapshot (a teammate moves the team, and no reveal of the runner's own would release it), and turning waiting drops one taken while holding (see `docs/RELAY.md`, "Mod"). Last-writer-wins: if two flags fire in rapid succession, only the last `zone_update` is shown.
 
 ---
 
