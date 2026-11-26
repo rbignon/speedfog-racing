@@ -107,10 +107,6 @@ class RelayModHandler(RaceModHandler):
         # in flight: stored on their row by the commit that applies it to the
         # team (``_record_debug_flags``), so a rejected report stores nothing.
         self._holder_deaths: int | None = None
-        # A stale save is refused at every report, about once a second for as
-        # long as it is loaded: the connection's first refusal warns, the
-        # next ones are debug.
-        self._stale_save_warned = False
         self._message_handlers["relay_ready"] = self._handle_relay_ready
         self._message_handlers["relay_handoff_request"] = self._handle_relay_handoff_request
         self._message_handlers["relay_take_request"] = self._handle_relay_take_request
@@ -443,6 +439,8 @@ class RelayModHandler(RaceModHandler):
             logger.info("Relay member validation skipped, row changed: %s", self.log_ref)
             return False
         logger.info("Relay member validated: %s igt_ms=%d", self.log_ref, igt_ms)
+        # The gate's accepted report: it ends the stale stretch.
+        self._stale_save_warned = False
         return True
 
     async def _store_own_deaths(

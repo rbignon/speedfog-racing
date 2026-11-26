@@ -521,8 +521,10 @@ carry every team's history. No progress load reads `character_state` (deferred).
   PLAYING and that holder is validated. Any other member's first report once the
   race runs (countdown over) sets `relay_validated` and moves them from READY to
   PLAYING when its IGT is at most 60 s; above, they get `error` `fresh_save_required`
-  and stay unvalidated (each refused report gets it; the connection's first refusal
-  logs `Rejected stale save (relay member)` at warning level, the next ones at debug).
+  and stay unvalidated (each refused report gets it; the first refusal of a stretch
+  logs `Rejected stale save (relay member)` at warning level, the next ones at debug,
+  and a validation ends the stretch: the connection's flag, shared with the team's
+  own gate, as in `docs/WEBSOCKET_LIFECYCLE.md`).
   Once validated, a waiting runner's IGT is never judged. Each
   validation draws the member's token, which binds them to that save (Baton, "One
   character per member"). The seed check is the mod's (it compares its pack with

@@ -2,6 +2,7 @@
 
 import io
 import json
+import logging
 import tempfile
 import time
 import uuid
@@ -1652,6 +1653,54 @@ def test_wrong_save_forward_jump_frozen_then_recovers(
 
     igt_ms, _ = asyncio.run(check_db())
     assert igt_ms == 11_000
+
+
+def test_refused_reports_warn_once_per_stretch(integration_client, race_with_participants, caplog):
+    """A stale save and an implausible IGT are refused at every report (the
+    error sent each time), but warn once per stretch, the repeats at debug;
+    an accepted report ends the stretch."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    def refused(mod: ModTestClient, igt_ms: int, code: str) -> None:
+        mod.send_status_update(igt_ms=igt_ms, death_count=0)
+        assert mod.receive_until_type("error")["code"] == code
+
+    with (
+        caplog.at_level(logging.DEBUG, logger="speedfog_racing.websocket.handler"),
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0,
+    ):
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        for igt_ms in (120_000, 121_000):
+            refused(mod0, igt_ms, "fresh_save_required")
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+        # Two stretches of an impossible jump, a plausible report between.
+        for igt_ms in (7_210_000, 7_211_000):
+            refused(mod0, igt_ms, "wrong_save")
+        mod0.send_status_update(igt_ms=10_500, death_count=0)
+        mod0.receive_until_type("player_update")
+        refused(mod0, 7_212_000, "wrong_save")
+
+    def levels(prefix: str) -> list[int]:
+        return [r.levelno for r in caplog.records if r.getMessage().startswith(prefix)]
+
+    assert levels("Rejected stale save") == [logging.WARNING, logging.DEBUG]
+    assert levels("Rejected implausible IGT") == [logging.WARNING, logging.DEBUG, logging.WARNING]
 
 
 def test_wrong_save_event_flag_and_zone_query_acked_not_recorded(

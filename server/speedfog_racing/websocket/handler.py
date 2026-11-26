@@ -609,6 +609,12 @@ class BaseModHandler(BaseHandler, Generic[T]):
         # Same for the race item use flags (see _race_item_use_flags).
         self._item_use_flags_graph: dict[str, Any] | None = None
         self._item_use_flags_map: dict[int, str] = {}
+        # A stale save and an implausible IGT are refused at every
+        # status_update, about once a second for as long as that save is
+        # loaded: the first refusal of a stretch warns, the next ones are
+        # debug. An accepted report ends the stretch.
+        self._stale_save_warned = False
+        self._implausible_igt_warned = False
         self._message_handlers = {
             "status_update": self._handle_status_update,
             "event_flag": self._handle_event_flag,
@@ -794,11 +800,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             # Gate: reject stale saves on first initialization
             if not entity.zone_history and igt_ms_val > MAX_FRESH_IGT_MS:
-                logger.warning(
-                    "Rejected stale save: %s igt_ms=%d",
-                    self.log_ref,
-                    igt_ms_val,
-                )
+                log = logger.debug if self._stale_save_warned else logger.warning
+                log("Rejected stale save: %s igt_ms=%d", self.log_ref, igt_ms_val)
+                self._stale_save_warned = True
                 await self._send_condition(ErrorCode.FRESH_SAVE_REQUIRED)
                 return
 
@@ -808,14 +812,18 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # effectively continuous. Recovery is stateless: the next
             # plausible report is simply accepted.
             if not self._igt_plausible(entity, igt_ms_val):
-                logger.warning(
+                log = logger.debug if self._implausible_igt_warned else logger.warning
+                log(
                     "Rejected implausible IGT (wrong save?): %s reported=%d recorded=%d",
                     self.log_ref,
                     igt_ms_val,
                     entity.igt_ms,
                 )
+                self._implausible_igt_warned = True
                 await self._send_condition(ErrorCode.WRONG_SAVE)
                 return
+            self._stale_save_warned = False
+            self._implausible_igt_warned = False
 
             # Large rollback: backup restore (or another save); accepted by
             # design. Logs about once per second until the replay catches
