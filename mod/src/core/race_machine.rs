@@ -1030,7 +1030,7 @@ pub struct RaceMachine {
     pub relay_wrong_token: bool,
     /// The seed's `finish_event` was asked ON for a finished team's member
     /// (the seed's own RUN COMPLETE banner plays for it), or found already
-    /// ON in the finisher's save. Once per process, never reset.
+    /// ON in the finisher's save. Once per race start (`RaceStart` resets it).
     pub relay_finish_banner_asked: bool,
     /// Last IGT observed on the believed-good save and when: the recovery
     /// baseline while `wrong_save` is set.
@@ -2845,6 +2845,9 @@ impl RaceMachine {
                 // A quit-out requested before the start is not a race quit-out.
                 self.pending_quit_out = false;
                 self.deathless_banner_shown = false;
+                // A reset race starts on a New Game whose seed flag is off:
+                // its team finishing writes the finish flag again.
+                self.relay_finish_banner_asked = false;
                 self.debug_flags_seen = 0;
                 self.debug_flags_last = None;
                 // Without this, the IGT-regression arming would fire on the
@@ -3708,9 +3711,11 @@ impl RaceMachine {
     /// The finish flag is still to be written for this member: its team
     /// finished, it is still in, the seed has a `finish_event` not raised
     /// yet and the server gave a token to check the save against. Asks the
-    /// token read of the write, on settled frames, until it is made.
+    /// token read of the write, on settled frames of a save not found wrong,
+    /// until it is made.
     fn relay_finish_wanted(&self) -> bool {
         !self.relay_finish_banner_asked
+            && self.save_ok()
             && self
                 .relay
                 .as_ref()
@@ -5689,6 +5694,7 @@ impl RaceMachine {
         // judge no longer reads the token once the relay is over, so the
         // write asks its own read (`relay_finish_wanted`) and goes only into
         // a save holding the member's token.
+        let finish_read_asked = self.relay_token_read(now).is_some();
         if !self.relay_finish_banner_asked
             && self
                 .relay
@@ -5714,6 +5720,11 @@ impl RaceMachine {
                         (Some(_), Some(_)) => {
                             // Another save: read again later, the member may
                             // load its own.
+                            self.relay_token_retry_at = Some(now + relay_token::UNREADABLE_RETRY);
+                        }
+                        // A read asked and not made (the flags do not
+                        // read): again later, not on every frame.
+                        (_, None) if finish_read_asked => {
                             self.relay_token_retry_at = Some(now + relay_token::UNREADABLE_RETRY);
                         }
                         _ => {}
@@ -14795,9 +14806,22 @@ mod tests {
         token: Option<u32>,
         reads: Option<Vec<(u32, bool)>>,
     ) -> Vec<Effect> {
+        finish_frame_igt(m, t0, at, map, token, reads, LOCAL_IGT + at as u32)
+    }
+
+    /// `finish_frame` reading `igt`.
+    fn finish_frame_igt(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        token: Option<u32>,
+        reads: Option<Vec<(u32, bool)>>,
+        igt: u32,
+    ) -> Vec<Effect> {
         let asked = m.pre_tick(t0 + ms(at), true, true).relay_token.is_some();
         let mut snapshot = FrameSnapshot {
-            igt_ms: Some(LOCAL_IGT + at as u32),
+            igt_ms: Some(igt),
             death_count: Some(0),
             position_readable: map.is_some(),
             loading_screen: Some(false),
@@ -14820,9 +14844,23 @@ mod tests {
         map: Option<u32>,
         token: Option<u32>,
     ) -> Vec<(u64, Effect)> {
+        local_over_asked(m, t0, from, to, map, token).0
+    }
+
+    /// `local_over`, with the number of frames that asked for a token read.
+    fn local_over_asked(
+        m: &mut RaceMachine,
+        t0: Instant,
+        from: u64,
+        to: u64,
+        map: Option<u32>,
+        token: Option<u32>,
+    ) -> (Vec<(u64, Effect)>, usize) {
         let mut out = Vec::new();
+        let mut asks = 0;
         let mut at = from;
         while at <= to {
+            asks += usize::from(m.pre_tick(t0 + ms(at), true, true).relay_token.is_some());
             out.extend(
                 finish_frame(m, t0, at, map, token, None)
                     .into_iter()
@@ -14830,7 +14868,7 @@ mod tests {
             );
             at += 100;
         }
-        out
+        (out, asks)
     }
 
     #[test]
@@ -14879,21 +14917,27 @@ mod tests {
         let mut m = finish_receiver(t0);
         m.wrong_save = true;
         team_finished(&mut m, t0, 950);
-        let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable(), Some(TOKEN));
+        let (fx, asks) = local_over_asked(&mut m, t0, 1_000, 3_000, roundtable(), Some(TOKEN));
         assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
+        assert_eq!(asks, 0, "no token read on a save found wrong");
     }
 
     #[test]
     fn a_member_out_or_a_team_not_finished_gets_no_finish_flag() {
         let t0 = Instant::now();
-        let mut out_member = relay_info_with("waiting", "finished");
+        let with_token = |status: &str| {
+            let mut info = relay_info_with("waiting", status);
+            info.token = Some(TOKEN);
+            info
+        };
+        let mut out_member = with_token("finished");
         set_member_status(&mut out_member, "p1", ParticipantStatus::Abandoned);
-        let mut cases = vec![
+        let cases = [
             ("member out", out_member),
-            ("team abandoned", relay_info_with("waiting", "abandoned")),
-            ("team playing", relay_info_with("waiting", "playing")),
+            ("team abandoned", with_token("abandoned")),
+            ("team playing", with_token("playing")),
         ];
-        for (name, info) in cases.drain(..) {
+        for (name, info) in cases {
             let mut m = finish_receiver(t0);
             update(&mut m, info, t0, 950);
             let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable(), Some(TOKEN));
@@ -14901,6 +14945,7 @@ mod tests {
         }
         // The race ends with the team still playing.
         let mut m = finish_receiver(t0);
+        update(&mut m, with_token("playing"), t0, 900);
         m.handle_message(
             MachineMessage::RaceStatusChange {
                 status: RaceStatus::Finished,
@@ -14916,6 +14961,12 @@ mod tests {
         team_finished(&mut m, t0, 950);
         let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable(), Some(TOKEN));
         assert!(times_of(&fx, &finish_on()).is_empty(), "no event: {fx:?}");
+        // Positive control: the same fixture with the team finished writes.
+        let mut m = finish_receiver(t0);
+        update(&mut m, with_token("playing"), t0, 900);
+        team_finished(&mut m, t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable(), Some(TOKEN));
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
     }
 
     #[test]
@@ -14965,9 +15016,10 @@ mod tests {
         // A frame with no read waits for one.
         let mut m = finish_receiver(t0);
         team_finished(&mut m, t0, 950);
-        let fx = local_over(&mut m, t0, 1_000, 1_900, roundtable(), None);
+        let (fx, asks) = local_over_asked(&mut m, t0, 1_000, 3_900, roundtable(), None);
         assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
-        let fx = local_over(&mut m, t0, 2_000, 2_300, roundtable(), Some(TOKEN));
+        assert!(asks <= 7, "{asks} reads asked in 3 s with none made");
+        let fx = local_over(&mut m, t0, 4_000, 4_600, roundtable(), Some(TOKEN));
         assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
 
         // No token in the relay info: nothing to check the save against.
@@ -15046,20 +15098,55 @@ mod tests {
             assert!(quiet(&fx), "{at}: {fx:?}");
             at += 100;
         }
-        // A save reload (the IGT falls back), the flag read ON again.
-        let mut at = 2_600;
+        // A save reload: the IGT falls back by more than a minute.
+        assert!(m.triggered_flags.contains(&FINISH));
+        let fx = finish_frame_igt(&mut m, t0, 2_600, roundtable(), Some(TOKEN), None, 1_000);
+        assert!(quiet(&fx), "{fx:?}");
+        assert!(
+            !m.triggered_flags.contains(&FINISH),
+            "the reload clears the per-save flags"
+        );
+        // The flag, read ON again on the reloaded save, is still no arrival.
+        let mut at = 2_700;
         while at <= 3_500 {
-            let fx = finish_frame(
+            let fx = finish_frame_igt(
                 &mut m,
                 t0,
                 at,
                 roundtable(),
                 Some(TOKEN),
                 Some(vec![(FINISH, true)]),
+                1_000 + at as u32,
             );
             assert!(quiet(&fx), "{at}: {fx:?}");
             at += 100;
         }
+    }
+
+    #[test]
+    fn a_race_start_lets_the_finish_flag_be_written_again() {
+        let t0 = Instant::now();
+        let mut m = finish_receiver(t0);
+        team_finished(&mut m, t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 2_000, roundtable(), Some(TOKEN));
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
+        // The race is reset and started again on a New Game: the IGT falls
+        // back, the team plays.
+        let mut info = relay_info_with("waiting", "playing");
+        info.token = Some(TOKEN);
+        update(&mut m, info, t0, 2_050);
+        set_row_status(&mut m, "t1", "playing");
+        m.handle_message(MachineMessage::RaceStart(0), t0 + ms(2_100));
+        finish_frame_igt(&mut m, t0, 2_200, roundtable(), Some(TOKEN), None, 1_000);
+        // The team finishes again: one more write.
+        team_finished(&mut m, t0, 2_300);
+        let mut fx = Vec::new();
+        for at in (2_400..=5_000).step_by(100) {
+            let igt = 1_000 + at as u32;
+            let frame = finish_frame_igt(&mut m, t0, at, roundtable(), Some(TOKEN), None, igt);
+            fx.extend(frame.into_iter().map(|e| (at, e)));
+        }
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
     }
 
     #[test]
