@@ -1028,6 +1028,10 @@ pub struct RaceMachine {
     /// server keeps sending the token once it is over, and the runner may
     /// then load another character.
     pub relay_wrong_token: bool,
+    /// The seed's `finish_event` was asked ON for a finished team's member
+    /// (the seed's own RUN COMPLETE banner plays for it), or found already
+    /// ON in the finisher's save. Once per process, never reset.
+    pub relay_finish_banner_asked: bool,
     /// Last IGT observed on the believed-good save and when: the recovery
     /// baseline while `wrong_save` is set.
     pub last_good_igt: Option<u32>,
@@ -1228,6 +1232,7 @@ impl RaceMachine {
             has_been_in_world: false,
             wrong_save: false,
             relay_wrong_token: false,
+            relay_finish_banner_asked: false,
             last_good_igt: None,
             last_good_at: None,
             last_seen_death_count: None,
@@ -5658,6 +5663,31 @@ impl RaceMachine {
         }
         let settled = self.relay_settled(now);
         let can_write = readable && self.save_ok() && settled;
+
+        // The team finished: the seed's RUN COMPLETE banner (its event waits
+        // on `finish_event`) plays for each member still in, not only for
+        // the runner who killed the final boss. The flag joins
+        // `triggered_flags`, so the flag poll never takes the write for an
+        // arrival; the finisher has it already and gets no second write.
+        if !self.relay_finish_banner_asked
+            && can_write
+            && self
+                .relay
+                .as_ref()
+                .is_some_and(|r| r.team_status == ParticipantStatus::Finished)
+            && !self.relay_me().is_some_and(|m| m.status.is_out())
+        {
+            if let Some(flag) = self.finish_event {
+                self.relay_finish_banner_asked = true;
+                if self.triggered_flags.insert(flag) {
+                    info!(flag, "[RELAY] Run complete banner asked");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: true,
+                    });
+                }
+            }
+        }
 
         // A warp to the Roundtable Hold ends when the runner no longer
         // belongs there: a holder, a take started or an over relay does not
@@ -14688,6 +14718,215 @@ mod tests {
         assert!(!m.am_i_finished());
         set_row_status(&mut m, "t1", "finished");
         assert!(m.am_i_finished());
+    }
+
+    const FINISH: u32 = 1050294122;
+
+    fn finish_on() -> Effect {
+        Effect::SetGameFlag {
+            flag_id: FINISH,
+            value: true,
+        }
+    }
+
+    fn finish_off() -> Effect {
+        Effect::SetGameFlag {
+            flag_id: FINISH,
+            value: false,
+        }
+    }
+
+    /// A receiver whose seed has a finish event.
+    fn finish_receiver(t0: Instant) -> RaceMachine {
+        let mut m = receiver(t0);
+        m.finish_event = Some(FINISH);
+        m
+    }
+
+    /// The server's word that the team finished: its relay info and its row.
+    fn team_finished(m: &mut RaceMachine, t0: Instant, at: u64) {
+        update(m, relay_info_with("waiting", "finished"), t0, at);
+        set_row_status(m, "t1", "finished");
+    }
+
+    /// Frames every 100 ms over `[from, to]` of the receiver's own save.
+    fn local_over(
+        m: &mut RaceMachine,
+        t0: Instant,
+        from: u64,
+        to: u64,
+        map: Option<u32>,
+    ) -> Vec<(u64, Effect)> {
+        let mut out = Vec::new();
+        let mut at = from;
+        while at <= to {
+            out.extend(local(m, t0, at, map).into_iter().map(|e| (at, e)));
+            at += 100;
+        }
+        out
+    }
+
+    #[test]
+    fn a_finished_team_raises_the_finish_flag_once_for_a_waiting_member() {
+        let t0 = Instant::now();
+        let mut m = finish_receiver(t0);
+        team_finished(&mut m, t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 2_000, roundtable());
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
+        // A later update, the team still finished: no second write.
+        team_finished(&mut m, t0, 2_050);
+        let fx = local_over(&mut m, t0, 2_100, 4_000, roundtable());
+        assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn the_finish_flag_waits_for_a_settled_frame_of_the_race_save() {
+        let t0 = Instant::now();
+        let mut m = finish_receiver(t0);
+        // The team finishes while the runner loads, then the load exits.
+        local(&mut m, t0, 1_000, None);
+        team_finished(&mut m, t0, 1_050);
+        let fx = local_over(&mut m, t0, 1_100, 1_900, None);
+        assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
+        let exit = 2_000;
+        let mut fx = local_over(&mut m, t0, exit, exit + settle_ms() - 100, roundtable());
+        assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
+        fx = local_over(
+            &mut m,
+            t0,
+            exit + settle_ms(),
+            exit + settle_ms() + 500,
+            roundtable(),
+        );
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
+
+        // On a save that is not the race's (the IGT's verdict; the token is
+        // no longer judged once the relay is over): nothing.
+        let mut m = finish_receiver(t0);
+        m.wrong_save = true;
+        team_finished(&mut m, t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable());
+        assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_member_out_or_a_team_not_finished_gets_no_finish_flag() {
+        let t0 = Instant::now();
+        let mut out_member = relay_info_with("waiting", "finished");
+        set_member_status(&mut out_member, "p1", ParticipantStatus::Abandoned);
+        let mut cases = vec![
+            ("member out", out_member),
+            ("team abandoned", relay_info_with("waiting", "abandoned")),
+            ("team playing", relay_info_with("waiting", "playing")),
+        ];
+        for (name, info) in cases.drain(..) {
+            let mut m = finish_receiver(t0);
+            update(&mut m, info, t0, 950);
+            let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable());
+            assert!(times_of(&fx, &finish_on()).is_empty(), "{name}: {fx:?}");
+        }
+        // The race ends with the team still playing.
+        let mut m = finish_receiver(t0);
+        m.handle_message(
+            MachineMessage::RaceStatusChange {
+                status: RaceStatus::Finished,
+                current_igt: None,
+            },
+            t0 + ms(950),
+        );
+        let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable());
+        assert!(times_of(&fx, &finish_on()).is_empty(), "race over: {fx:?}");
+        // A seed with no finish event.
+        let mut m = receiver(t0);
+        m.finish_event = None;
+        team_finished(&mut m, t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 3_000, roundtable());
+        assert!(times_of(&fx, &finish_on()).is_empty(), "no event: {fx:?}");
+    }
+
+    #[test]
+    fn the_finisher_gets_no_second_finish_flag() {
+        let t0 = Instant::now();
+        let mut m = finish_receiver(t0);
+        // The runner's own kill: the poll reads the flag on first.
+        let fx = rx_frame(
+            &mut m,
+            t0,
+            1_000,
+            roundtable(),
+            LOCAL_IGT + 1_000,
+            100,
+            Some(vec![(FINISH, true)]),
+        );
+        assert!(!fx.contains(&finish_on()), "{fx:?}");
+        assert!(m.triggered_flags.contains(&FINISH));
+        team_finished(&mut m, t0, 1_050);
+        let fx = local_over(&mut m, t0, 1_100, 3_000, roundtable());
+        assert!(times_of(&fx, &finish_on()).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn the_written_finish_flag_is_never_reported_nor_lowered() {
+        let t0 = Instant::now();
+        // The relay info comes before the team's row: the written flag, read
+        // ON in between, is not the runner's arrival.
+        let mut m = finish_receiver(t0);
+        update(&mut m, relay_info_with("waiting", "finished"), t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 1_100, roundtable());
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
+        let fx = rx_frame(
+            &mut m,
+            t0,
+            1_200,
+            roundtable(),
+            LOCAL_IGT + 1_200,
+            100,
+            Some(vec![(FINISH, true)]),
+        );
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::SendEventFlag { .. })),
+            "{fx:?}"
+        );
+        let mut m = finish_receiver(t0);
+        team_finished(&mut m, t0, 950);
+        let fx = local_over(&mut m, t0, 1_000, 1_500, roundtable());
+        assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
+        let quiet = |fx: &[Effect]| {
+            !fx.iter().any(|e| {
+                *e == finish_off()
+                    || matches!(e, Effect::SendEventFlag { .. } | Effect::LiveSplitRun(_))
+            })
+        };
+        // The poll reads the written flag ON.
+        let mut at = 1_600;
+        while at <= 2_500 {
+            let fx = rx_frame(
+                &mut m,
+                t0,
+                at,
+                roundtable(),
+                LOCAL_IGT + at as u32,
+                100,
+                Some(vec![(FINISH, true)]),
+            );
+            assert!(quiet(&fx), "{at}: {fx:?}");
+            at += 100;
+        }
+        // A save reload (the IGT falls back), the flag read ON again.
+        let mut at = 2_600;
+        while at <= 3_500 {
+            let fx = rx_frame(
+                &mut m,
+                t0,
+                at,
+                roundtable(),
+                1_000 + at as u32,
+                100,
+                Some(vec![(FINISH, true)]),
+            );
+            assert!(quiet(&fx), "{at}: {fx:?}");
+            at += 100;
+        }
     }
 
     #[test]
