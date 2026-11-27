@@ -1709,10 +1709,11 @@ impl RaceMachine {
         }
     }
 
-    /// The waiting banner's line: `RETURNING_TEXT` on the plain waiting
-    /// banner ("WAITING FOR THE BATON") while the runner is on its way back
-    /// to the Roundtable Hold (`relay_returning_since`), else the banner's
-    /// own (the "BATON PASSED" banner's already says the return).
+    /// The waiting banner's line: `RETURNING_TEXT` on the plain, fog-toned
+    /// waiting banner ("WAITING FOR THE BATON", or "QUOTA REACHED" at the
+    /// cap) while the runner is on its way back to the Roundtable Hold
+    /// (`relay_returning_since`), else the banner's own (the "BATON PASSED"
+    /// banner's already says the return).
     pub fn relay_wait_line(&self) -> &str {
         if self.relay_returning_line_since().is_some() {
             return relay_view::RETURNING_TEXT;
@@ -16130,7 +16131,10 @@ mod tests {
         let fx = go(&mut m, t0, 8_100, Some(IN_ZONE));
         assert_eq!(captures(&fx), [Some("h1".to_string())]);
         answer(&mut m, t0, 8_150, Some("h1"), Some(char_state()));
-        update(&mut m, relay_info("waiting"), t0, 8_200);
+        // Its member entry at the cap too (2/2), as the server counts it.
+        let mut waiting = relay_info("waiting");
+        waiting.cap = 2;
+        update(&mut m, waiting, t0, 8_200);
         // Waiting: the travel lock raised (the lock already is), and the
         // warp to the Roundtable Hold at once, its gate window long over.
         let fx = go(&mut m, t0, 8_300, Some(IN_ZONE));
@@ -16143,7 +16147,9 @@ mod tests {
         assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
         assert!(m.relay_wait_visible(t0 + ms(12_100)), "shown over the load");
         go(&mut m, t0, 12_200, None);
-        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+        // At the cap, the waiting banner says so (E10's BATON PASSED, then
+        // QUOTA REACHED).
+        assert_eq!(wait_title(&m), relay_view::QUOTA_TITLE);
         assert!(
             !m.relay_wait_visible(t0 + ms(12_200)),
             "the waiting banner waits for the load's end"
@@ -19821,6 +19827,23 @@ mod tests {
             m.relay_view().unwrap().wait.as_ref().unwrap().title,
             "THE BATON IS FREE"
         );
+    }
+
+    #[test]
+    fn a_relay_update_that_moves_only_the_cap_retitles_the_waiting_banner() {
+        // The view's key (role, free_in, layer) does not hold the cap: every
+        // relay update rebuilds it, so a cap reached or raised shows at once.
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let title = |m: &RaceMachine| m.relay_view().unwrap().wait.as_ref().unwrap().title.clone();
+        assert_eq!(title(&m), "WAITING FOR THE BATON");
+        let mut capped = relay_info("waiting");
+        capped.cap = 2;
+        update(&mut m, capped.clone(), t0, 100);
+        assert_eq!(title(&m), relay_view::QUOTA_TITLE);
+        capped.cap = 3;
+        update(&mut m, capped, t0, 200);
+        assert_eq!(title(&m), "WAITING FOR THE BATON");
     }
 
     #[test]

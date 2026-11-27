@@ -29,6 +29,13 @@ pub const UNBOUND_TEXT: &str = "No baton key bound: set `relay` in the config";
 /// to the Roundtable Hold, and the plain waiting banner's line while a
 /// waiting runner is (`RaceMachine::relay_wait_line`).
 pub const RETURNING_TEXT: &str = "Returning to the Roundtable Hold...";
+/// Title of the waiting banner of a runner at or over the team's cap: the
+/// baton cannot come back to them while the cap holds (it rises when a
+/// member leaves the team, and the plain title comes back with it).
+pub const QUOTA_TITLE: &str = "QUOTA REACHED";
+/// The detail of a free baton's or an offline holder's banner for a runner
+/// at the cap: no take is offered them.
+pub const AT_CAP_TEXT: &str = "You are at your cap.";
 /// One pulse of a pulsing line: full, down to `PULSE_MIN`, full again.
 pub const PULSE_PERIOD: Duration = Duration::from_millis(1200);
 /// The faintest a pulsing line gets: it never vanishes.
@@ -38,7 +45,7 @@ const UNKNOWN_NAME: &str = "A teammate";
 const UNKNOWN_HOLDER: &str = "The holder";
 
 /// Color family of a block's title; the drawing maps it to the overlay's
-/// colors (fog: text, brass: gold, ember: danger, verdigris: success).
+/// colors (fog: purple, brass: gold, ember: danger, verdigris: success).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockTone {
     Fog,
@@ -240,6 +247,13 @@ fn waiting_view(
         .filter(|z| !z.is_empty());
     let free = free_in == Some(0);
     let mine = me_entry.map(|m| counter(m, info.cap));
+    let capped = me_entry.is_some_and(|m| m.zones >= info.cap);
+    // At the cap, in the server's order of refusals for a take (no fresh
+    // save first): one flag for the free and offline banners' title and
+    // detail, so the two cannot drift apart. The held baton's fog title
+    // reads `capped` (no refusal order there; a member's zones only count
+    // once the server has validated them).
+    let quota = capped && me_entry.is_some_and(|m| m.validated);
     let mut view = RelayView {
         baton_who: if free {
             "free".to_string()
@@ -264,7 +278,7 @@ fn waiting_view(
                 "No fresh save: you cannot take the baton.".to_string(),
                 false,
             ),
-            Some(m) if m.zones >= info.cap => ("You are at your cap.".to_string(), false),
+            Some(_) if quota => (AT_CAP_TEXT.to_string(), false),
             // No key to hold: the prompt says so, with no bar.
             Some(_) if key.is_none() => (UNBOUND_TEXT.to_string(), false),
             Some(_) => {
@@ -291,9 +305,17 @@ fn waiting_view(
         } else {
             "The handoff was not completed".to_string()
         };
+        // A runner at the cap cannot take it: its title says so, while the
+        // tone and the line still tell the free baton. Not fog: the
+        // returning line stays off this banner.
         view.wait = Some(WaitBanner {
             tone: BlockTone::Verdigris,
-            title: "THE BATON IS FREE".to_string(),
+            title: if quota {
+                QUOTA_TITLE
+            } else {
+                "THE BATON IS FREE"
+            }
+            .to_string(),
             line,
             detail,
             hold_bar,
@@ -309,7 +331,13 @@ fn waiting_view(
                 Some(secs) => format!("The baton can be taken in {secs} s"),
                 None => format!("{holder_name} is not in the game"),
             },
-            detail: format!("It goes back to {holder_name} if they return before then."),
+            // The countdown is the news of the moment; a runner at the cap
+            // is not told what it would mean for them.
+            detail: if quota {
+                AT_CAP_TEXT.to_string()
+            } else {
+                format!("It goes back to {holder_name} if they return before then.")
+            },
             hold_bar: false,
         }
     } else {
@@ -330,7 +358,12 @@ fn waiting_view(
         };
         WaitBanner {
             tone: BlockTone::Fog,
-            title: "WAITING FOR THE BATON".to_string(),
+            title: if capped {
+                QUOTA_TITLE
+            } else {
+                "WAITING FOR THE BATON"
+            }
+            .to_string(),
             line,
             detail,
             hold_bar: false,
@@ -457,8 +490,121 @@ mod tests {
         .wait
         .unwrap();
         assert_eq!(
+            (capped.tone, capped.title.as_str()),
+            (BlockTone::Verdigris, QUOTA_TITLE)
+        );
+        assert_eq!(capped.line, "Kahleeya has been offline for over a minute");
+        assert_eq!(
             (capped.detail.as_str(), capped.hold_bar),
             ("You are at your cap.", false)
+        );
+    }
+
+    #[test]
+    fn a_waiting_runner_at_the_cap_reads_the_quota_title() {
+        let v = build(
+            &info("waiting", true, None),
+            RelayRole::Waiting,
+            "p4",
+            LAYER,
+            None,
+            Some("F8"),
+        );
+        assert_eq!(
+            wait_of(&v),
+            (
+                BlockTone::Fog,
+                QUOTA_TITLE,
+                "Kahleeya is in Leyndell, Royal Capital",
+                "Zone 9 of 12. You: 5/5 zones.",
+                false
+            )
+        );
+        // Over the cap (a kill counted at the cap): the same title.
+        let mut over = info("waiting", true, None);
+        member(&mut over, "p4").zones = 6;
+        let v = build(&over, RelayRole::Waiting, "p4", LAYER, None, Some("F8"));
+        assert_eq!(
+            (wait_of(&v).1, wait_of(&v).3),
+            (QUOTA_TITLE, "Zone 9 of 12. You: 6/5 zones.")
+        );
+        // One zone under the cap: the plain title.
+        let mut under = info("waiting", true, None);
+        member(&mut under, "p4").zones = 4;
+        let v = build(&under, RelayRole::Waiting, "p4", LAYER, None, Some("F8"));
+        assert_eq!(wait_of(&v).1, "WAITING FOR THE BATON");
+    }
+
+    #[test]
+    fn an_offline_holder_tells_a_capped_runner_its_cap_not_the_wait() {
+        let w = build(
+            &info("waiting", false, Some(60)),
+            RelayRole::Waiting,
+            "p4",
+            LAYER,
+            Some(42),
+            Some("F8"),
+        )
+        .wait
+        .unwrap();
+        assert_eq!(
+            (w.tone, w.title.as_str(), w.line.as_str(), w.detail.as_str()),
+            (
+                BlockTone::Ember,
+                "KAHLEEYA IS OFFLINE",
+                "The baton can be taken in 42 s",
+                AT_CAP_TEXT
+            )
+        );
+        // Under the cap, the usual detail.
+        let w = build(
+            &info("waiting", false, Some(60)),
+            RelayRole::Waiting,
+            "p1",
+            LAYER,
+            Some(42),
+            Some("F8"),
+        )
+        .wait
+        .unwrap();
+        assert_eq!(
+            w.detail,
+            "It goes back to Kahleeya if they return before then."
+        );
+    }
+
+    #[test]
+    fn a_cap_that_rises_gives_back_the_waiting_title() {
+        // A member out: the server recomputes the cap on fewer members.
+        let mut i = info("waiting", true, None);
+        let title = |i: &RelayInfo| {
+            build(i, RelayRole::Waiting, "p4", LAYER, None, Some("F8"))
+                .wait
+                .unwrap()
+        };
+        assert_eq!(title(&i).title, QUOTA_TITLE);
+        i.cap = 6;
+        let w = title(&i);
+        assert_eq!(
+            (w.title.as_str(), w.detail.as_str()),
+            ("WAITING FOR THE BATON", "Zone 9 of 12. You: 5/6 zones.")
+        );
+    }
+
+    #[test]
+    fn a_free_baton_at_the_cap_without_a_fresh_save_reads_its_own_refusal() {
+        let mut i = info("waiting", false, Some(0));
+        member(&mut i, "p4").validated = false;
+        let w = build(&i, RelayRole::Waiting, "p4", LAYER, Some(0), Some("F8"))
+            .wait
+            .unwrap();
+        assert_eq!(
+            (w.tone, w.title.as_str(), w.detail.as_str()),
+            (
+                BlockTone::Verdigris,
+                "THE BATON IS FREE",
+                "No fresh save: you cannot take the baton."
+            )
         );
     }
 
