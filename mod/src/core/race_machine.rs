@@ -905,12 +905,9 @@ pub struct RaceMachine {
     relay_token_settled: bool,
     /// A read of the relay token flags is due (`FrameNeeds::relay_token`).
     relay_token_due: bool,
-    /// This frame's read was asked, as `pre_tick` saw it: noted before the
-    /// judge moves `relay_token_due`, for what is decided after it.
-    relay_read_asked: bool,
     /// No read of the token flags is asked before this, after one that
-    /// found a flag unreadable, or (once the relay is over) one the finish
-    /// write could not use: another save's, or none made.
+    /// found a flag unreadable, or (once the token is no longer judged) one
+    /// that did not find the runner's token: another save's, or none made.
     relay_token_retry_at: Option<Instant>,
     /// Token flags that did not read on a settled frame were warned about
     /// since the last load (later ones go to the debug log).
@@ -1206,7 +1203,6 @@ impl RaceMachine {
             relay_token_verdict: None,
             relay_token_settled: false,
             relay_token_due: false,
-            relay_read_asked: false,
             relay_token_retry_at: None,
             relay_token_unreadable_warned: false,
             relay_token_writes: 0,
@@ -3697,10 +3693,12 @@ impl RaceMachine {
     /// The relay token flags to read this frame, `(base, bits)`: a read is
     /// due, or the verdict waits for a read on a settled frame and this one
     /// is settled; the relay is live for the runner with a token drawn, or
-    /// over with the finish write pending (`relay_finish_wanted`, settled
-    /// frames only); and no read that found a flag unreadable, or that the
-    /// finish write could not use, asks to wait. The shell reads them only
-    /// on a loaded frame. A few comparisons while no read is due.
+    /// no longer judged with the finish write pending
+    /// (`relay_finish_wanted`) or a save to prove (`relay_save_to_prove`),
+    /// on settled frames only; and no read that found a flag unreadable, or
+    /// (the token no longer judged) no runner's token, asks to wait. The
+    /// shell reads them only on a loaded frame. A few comparisons while no
+    /// read is due.
     fn relay_token_read(&self, now: Instant) -> Option<(u32, u32)> {
         let relay = self.relay.as_ref()?;
         let settled_now = self.relay_settled(now);
@@ -3711,8 +3709,21 @@ impl RaceMachine {
             return None;
         }
         relay.token?;
-        (self.relay_live() || (settled_now && self.relay_finish_wanted()))
-            .then_some((relay.flags.token_flag_base, relay.flags.token_bits))
+        (self.relay_live()
+            || (settled_now && (self.relay_finish_wanted() || self.relay_save_to_prove())))
+        .then_some((relay.flags.token_flag_base, relay.flags.token_bits))
+    }
+
+    /// The IGT guard reads the save wrong once the token is no longer
+    /// judged for good (the relay over for the runner, or the race not
+    /// running): a read that finds the runner's token proves it the race
+    /// save (`judge_relay_token`). Back from another character loaded from
+    /// the menu, the guard reads the race save wrong for good otherwise: it
+    /// took that character's readings for the race save's, and the race
+    /// save's flags (its locks) would never be written again. Two field
+    /// reads while the save reads right.
+    fn relay_save_to_prove(&self) -> bool {
+        self.wrong_save && (self.relay_over() || !self.is_race_running())
     }
 
     /// The seed's finish flag, while it is to be raised for this member: its
@@ -3945,7 +3956,6 @@ impl RaceMachine {
         self.show_unseen_status(now);
         // Before anything is decided or sent on this frame's save. A return
         // to the race save from another one is paid as a quit-out below.
-        self.relay_read_asked = self.relay_token_read(now).is_some();
         let token_return = self.judge_relay_token(input.connected, now, &mut effects);
         // The play clock runs while the player is in the world, the signal
         // `loading_exit` keys on, on the race save: loading screens, the
@@ -5448,13 +5458,17 @@ impl RaceMachine {
     /// Judge the loaded save's relay token, first thing in a frame: a frame
     /// that reads another token sends nothing and writes nothing as the race
     /// save's. The token is judged only while the relay is live for the
-    /// runner with a token drawn; otherwise it reads nothing (the finish
-    /// write of an over relay asks its own read, `relay_finish_wanted`) and
-    /// the save is never wrong by its token. Each load makes two reads due: on the first
-    /// loaded frame after it (no progress leaves a wrong save) and on the
-    /// first settled frame, whose verdict replaces the first (the flags may
-    /// not hold the loaded save's values at once); the load also starts the
-    /// token's writes from none. The read `relay_token_read` asked: a flag
+    /// runner with a token drawn; otherwise the save is never wrong by its
+    /// token, and a read is asked only for the finish write of an over relay
+    /// (`relay_finish_wanted`) or to prove the race save to the IGT guard
+    /// (`relay_save_to_prove`): on a settled frame, one that finds the
+    /// runner's token lifts the guard's wrong save, one that does not asks
+    /// again after `relay_token::UNREADABLE_RETRY`. Each load makes two
+    /// reads due: on the first loaded frame after it (no progress leaves a
+    /// wrong save) and on the first settled frame, whose verdict replaces
+    /// the first (the flags may not hold the loaded save's values at once);
+    /// the load also starts the token's writes from none. The read
+    /// `relay_token_read` asked: a flag
     /// unreadable asks again after `relay_token::UNREADABLE_RETRY`, the
     /// verdict left as it was (warned once per load on a settled frame); the
     /// runner's token unbound sends `relay_bound` (once per connection, on
@@ -5508,6 +5522,25 @@ impl RaceMachine {
                         parked,
                         "[RELAY] Held loading exit dropped, the token no longer judged"
                     );
+                }
+            }
+            // A read asked meanwhile (`relay_token_read`), on a settled
+            // frame: the runner's token proves the race save whatever the
+            // IGT guard reads (`relay_save_to_prove`), the guard then seeded
+            // again from its readings, as at a race start. Another save's
+            // token, or no read made: again after a while, not on every
+            // frame. A read is asked only with a token expected.
+            if asked
+                && self.frame_snapshot.position_readable
+                && self.was_position_readable
+                && self.relay_settled(now)
+            {
+                if self.frame_snapshot.relay_token != expected {
+                    self.relay_token_retry_at = Some(now + relay_token::UNREADABLE_RETRY);
+                } else if self.relay_save_to_prove() {
+                    info!("[RELAY] Token found once over, the race save is back");
+                    self.wrong_save = false;
+                    self.clear_igt_references();
                 }
             }
             return false;
@@ -5708,37 +5741,25 @@ impl RaceMachine {
         // the runner who killed the final boss. The flag joins
         // `triggered_flags`, so the flag poll never takes the write for an
         // arrival; the finisher has it already and gets no second write. The
-        // judge no longer reads the token once the relay is over, so the
-        // write asks its own read (`relay_finish_wanted`) and goes only into
-        // a save holding the member's token: the token alone, not the IGT
-        // guard (a member back from another character reads a wrong save by
-        // its IGT, and its save is the race's all the same).
+        // judge no longer judges the token once the relay is over, so the
+        // write asks its own read (`relay_finish_wanted`, read again now and
+        // then while it finds another save) and goes only into a save
+        // holding the member's token: the token alone, not the IGT guard,
+        // which takes another character loaded from the menu for a save
+        // reload of the race save.
         if let Some(flag) = self.relay_finish_flag() {
             if self.triggered_flags.contains(&flag) {
                 self.relay_finish_banner_asked = true;
             } else if readable && settled {
                 let token = self.relay.as_ref().and_then(|r| r.token);
-                match (token, self.frame_snapshot.relay_token) {
-                    (Some(token), Some(read)) if read == token => {
-                        self.relay_finish_banner_asked = true;
-                        self.triggered_flags.insert(flag);
-                        info!(flag, "[RELAY] Run complete banner asked");
-                        effects.push(Effect::SetGameFlag {
-                            flag_id: flag,
-                            value: true,
-                        });
-                    }
-                    // Another save: read again later, the member may load
-                    // its own.
-                    (Some(_), Some(_)) => {
-                        self.relay_token_retry_at = Some(now + relay_token::UNREADABLE_RETRY);
-                    }
-                    // A read asked and not made (the flags do not read):
-                    // again later, not on every frame.
-                    (Some(_), None) if self.relay_read_asked => {
-                        self.relay_token_retry_at = Some(now + relay_token::UNREADABLE_RETRY);
-                    }
-                    _ => {}
+                if token.is_some() && self.frame_snapshot.relay_token == token {
+                    self.relay_finish_banner_asked = true;
+                    self.triggered_flags.insert(flag);
+                    info!(flag, "[RELAY] Run complete banner asked");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: true,
+                    });
                 }
             }
         }
@@ -15110,6 +15131,121 @@ mod tests {
             Some(TOKEN),
         );
         assert_eq!(times_of(&fx, &finish_on()).len(), 1, "{fx:?}");
+    }
+
+    #[test]
+    fn a_member_back_from_another_character_after_the_relay_gets_its_locks_lowered() {
+        // The relay ends while the member plays another character, far
+        // below the race save's IGT: the IGT guard then takes that
+        // character's readings for the race save's, and reads the race
+        // save loaded back as a wrong save. Its token proves it the race
+        // save: the locks it kept from the wait are lowered on its settled
+        // frame, and the guard resumes from it (no WRONG SAVE LOADED).
+        type Over = fn(&mut RaceMachine, Instant, u64);
+        let cases: [(&str, Over); 3] = [
+            ("team finished", |m, t, at| team_finished(m, t, at)),
+            ("member abandoned", |m, t, at| {
+                let mut info = token_info("waiting", Some(TOKEN), true);
+                set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+                update(m, info, t, at);
+            }),
+            ("race finished", |m, t, at| {
+                m.handle_message(
+                    MachineMessage::RaceStatusChange {
+                        status: RaceStatus::Finished,
+                        current_igt: None,
+                    },
+                    t + ms(at),
+                );
+            }),
+        ];
+        for (name, over) in cases {
+            let t0 = Instant::now();
+            let mut m = receiver(t0);
+            m.finish_event = None;
+            update(&mut m, token_info("waiting", Some(TOKEN), true), t0, 950);
+            local_over(&mut m, t0, 1_000, 2_000, roundtable(), Some(TOKEN));
+            let other = |m: &mut RaceMachine, at: u64| {
+                let igt = 900_000 + at as u32;
+                finish_frame_igt(m, t0, at, roundtable(), Some(TOKEN + 1), None, igt)
+            };
+            finish_frame(&mut m, t0, 2_100, None, None, None);
+            for at in (2_200..=5_000).step_by(100) {
+                other(&mut m, at);
+            }
+            assert!(m.relay_wrong_token, "{name}");
+            over(&mut m, t0, 5_050);
+            for at in (5_100..=8_000).step_by(100) {
+                other(&mut m, at);
+            }
+            // Back to the race save.
+            finish_frame(&mut m, t0, 8_100, None, None, None);
+            let exit = 8_200;
+            let early = exit + settle_ms() - 100;
+            let fx = local_over(&mut m, t0, exit, early, roundtable(), Some(TOKEN));
+            assert!(
+                m.wrong_save,
+                "{name}: the IGT guard reads the race save wrong"
+            );
+            assert!(!fx.iter().any(|(_, e)| is_flag_write(e)), "{name}: {fx:?}");
+            let settled = exit + settle_ms();
+            let fx = local_over(
+                &mut m,
+                t0,
+                settled,
+                settled + 1_000,
+                roundtable(),
+                Some(TOKEN),
+            );
+            assert_eq!(times_of(&fx, &lock(false)), [settled], "{name}: {fx:?}");
+            assert_eq!(times_of(&fx, &travel(false)), [settled], "{name}: {fx:?}");
+            assert!(!m.wrong_save, "{name}: the race save is back");
+            // The guard runs again from the race save's readings: another
+            // character loaded once more is a save reload, not a wrong save.
+            finish_frame(&mut m, t0, settled + 1_100, None, None, None);
+            for at in (settled + 1_200..=settled + 2_000).step_by(100) {
+                other(&mut m, at);
+            }
+            assert!(!m.wrong_save, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_wrong_save_after_the_relay_is_not_the_race_save_without_its_token() {
+        // The relay over, a save the IGT guard reads wrong and whose token
+        // is not the member's: it stays wrong, nothing is written into it,
+        // and its token is read again only now and then.
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        m.finish_event = None;
+        update(&mut m, token_info("waiting", Some(TOKEN), true), t0, 950);
+        local_over(&mut m, t0, 1_000, 2_000, roundtable(), Some(TOKEN));
+        team_finished(&mut m, t0, 2_050);
+        let fx = local_over(&mut m, t0, 2_100, 2_500, roundtable(), Some(TOKEN));
+        assert_eq!(times_of(&fx, &lock(false)).len(), 1, "{fx:?}");
+        // A save further along than the race save, another token on it.
+        finish_frame(&mut m, t0, 2_600, None, None, None);
+        let mut fx = Vec::new();
+        let mut asks = 0;
+        for at in (2_700..=8_000).step_by(100) {
+            asks += usize::from(m.pre_tick(t0 + ms(at), true, true).relay_token.is_some());
+            let igt = LOCAL_IGT + 3_600_000 + at as u32;
+            fx.extend(finish_frame_igt(
+                &mut m,
+                t0,
+                at,
+                roundtable(),
+                Some(TOKEN + 1),
+                None,
+                igt,
+            ));
+        }
+        assert!(m.wrong_save);
+        assert!(!fx.iter().any(is_flag_write), "{fx:?}");
+        assert!(
+            (1..=7).contains(&asks),
+            "{asks} reads asked in 2.8 s settled"
+        );
     }
 
     #[test]
