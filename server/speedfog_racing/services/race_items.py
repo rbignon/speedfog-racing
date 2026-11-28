@@ -48,6 +48,9 @@ class CatalogEntry:
     goods: str
     effect_speffect: int | None
     duration_ms: int | None
+    # The SpEffect the mod applies once when the item lands, after its effect
+    # (graph.json 4.18; absent from older seeds).
+    impact_speffect: int | None = None
 
 
 @dataclass(frozen=True)
@@ -153,6 +156,7 @@ def _parse_item(raw: object) -> CatalogEntry | None:
         raw.get("goods"),
     )
     speffect, duration_ms = raw.get("effect_speffect"), raw.get("duration_ms")
+    impact = raw.get("impact_speffect")
     if (
         isinstance(name, str)
         and isinstance(icon, str)
@@ -160,8 +164,9 @@ def _parse_item(raw: object) -> CatalogEntry | None:
         and isinstance(goods, str)
         and _is_optional_int(speffect)
         and _is_optional_int(duration_ms)
+        and _is_optional_int(impact)
     ):
-        return CatalogEntry(name, icon, icon_id, goods, speffect, duration_ms)
+        return CatalogEntry(name, icon, icon_id, goods, speffect, duration_ms, impact)
     return None
 
 
@@ -666,14 +671,11 @@ def effect_payload(
             duration_ms=entry.duration_ms,
         )
     if kind == "damage":
-        # The seed's effect row, when the item has one (the Red Shell's
-        # explosion): the mod applies it right after the damage.
         return ItemEffectPayload(
             kind="damage",
             base_pct=_damage_pct(key),
             floor_pct=_percent(settings.race_items_damage_floor_pct),
             tail_pct=_percent(settings.race_items_damage_tail_pct),
-            speffect_id=entry.effect_speffect,
         )
     if kind == "ink":
         return ItemEffectPayload(kind="ink", duration_ms=entry.duration_ms)

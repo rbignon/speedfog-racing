@@ -319,7 +319,11 @@ async def resolve_item_use(
                     (
                         participant_id,
                         ItemEffectMessage(
-                            item=item_key, effect=payload, banner=None, reminder=None
+                            item=item_key,
+                            effect=payload,
+                            banner=None,
+                            reminder=None,
+                            impact_speffect_id=entry.impact_speffect,
                         ),
                     )
                 )
@@ -410,6 +414,7 @@ async def resolve_item_use(
                                     weapon.name if weapon else "",
                                 ),
                                 reminder=reminder_for(item_key, entry, variant),
+                                impact_speffect_id=entry.impact_speffect,
                             ),
                         )
                     )

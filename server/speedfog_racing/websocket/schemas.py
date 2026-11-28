@@ -678,13 +678,25 @@ class ItemGrantMessage(BaseModel):
 
 class ItemEffectMessage(BaseModel):
     """An item hits this runner; without a banner for a self item, whose
-    ``item_result`` carries it."""
+    ``item_result`` carries it. ``impact_speffect_id`` is the seed's impact
+    row for the item, which the mod applies once after the effect (the Red
+    Shell's and the Lightning's explosion, the Banana's slip)."""
 
     type: Literal["item_effect"] = "item_effect"
     item: str
     effect: ItemEffectPayload
     banner: ItemBanner | None = None
     reminder: ItemReminder | None = None
+    impact_speffect_id: int | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_absent_impact(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """Only an item with an impact carries the field: the others keep the
+        shape an older mod reads."""
+        data: dict[str, Any] = handler(self)
+        if data.get("impact_speffect_id") is None:
+            data.pop("impact_speffect_id", None)
+        return data
 
 
 class ItemResultMessage(BaseModel):

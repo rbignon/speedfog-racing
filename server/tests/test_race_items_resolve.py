@@ -44,7 +44,13 @@ PLAYING = ParticipantStatus.PLAYING
 
 
 def _item(
-    name: str, icon_id: int, *, goods: str = "race_item", speffect=None, duration_ms=None
+    name: str,
+    icon_id: int,
+    *,
+    goods: str = "race_item",
+    speffect=None,
+    duration_ms=None,
+    impact=None,
 ) -> dict:
     return {
         "name": name,
@@ -53,6 +59,7 @@ def _item(
         "goods": goods,
         "effect_speffect": speffect,
         "duration_ms": duration_ms,
+        "impact_speffect": impact,
     }
 
 
@@ -91,6 +98,10 @@ GRAPH = {
         ("mushroom", _item("Mushroom", 60389, speffect=1450826, duration_ms=30000)),
         ("hammer", _item("Hammer", 60390, speffect=1450827, duration_ms=15000)),
         ("blue_shell", _item("Blue Shell", 60392, speffect=1450829, duration_ms=15000)),
+        (
+            "lightning",
+            _item("Lightning", 60393, speffect=1450830, duration_ms=15000, impact=1450860),
+        ),
         ("star", _item("Star", 60397, speffect=1450833, duration_ms=5000)),
         ("talisman_thief", _item("Talisman Thief", 60404)),
         ("junk_weapon", _item("Junk Weapon", 60405)),
@@ -277,6 +288,29 @@ async def test_race_item_use_resolves_the_held_item(items_db):
     assert await _held(items_db, ids["Alice"]) is None
     [event] = await _use_events(items_db, race_id)
     assert event.item == "hammer"
+
+
+async def test_an_item_impact_rides_with_its_effect_to_every_target(items_db):
+    race_id, ids = await _field(
+        items_db,
+        ("Alice", PLAYING, 2, "lightning"),
+        ("Bob", PLAYING, 3, None),
+        ("Cleo", PLAYING, 1, None),
+    )
+    resolution = await _use(items_db, race_id, ids["Alice"])
+    # The seed's impact row goes with the effect, for the mod to apply once.
+    assert [(pid, e.effect.kind, e.impact_speffect_id) for pid, e in resolution.effects] == [
+        (ids["Bob"], "lightning", 1450860),
+        (ids["Cleo"], "lightning", 1450860),
+    ]
+
+
+async def test_an_item_without_an_impact_sends_none(items_db):
+    race_id, ids = await _field(
+        items_db, ("Alice", PLAYING, 2, "hammer"), ("Bob", PLAYING, 3, None)
+    )
+    resolution = await _use(items_db, race_id, ids["Alice"])
+    assert [e.impact_speffect_id for _, e in resolution.effects] == [None]
 
 
 async def test_mushroom_answers_its_own_mod_with_its_effect(items_db):

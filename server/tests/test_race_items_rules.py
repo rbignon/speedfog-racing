@@ -298,8 +298,8 @@ def test_damage_payload_uses_settings(monkeypatch):
     monkeypatch.setattr(settings, "race_items_red_shell_pct", 20)
     monkeypatch.setattr(settings, "race_items_damage_floor_pct", 20)
     monkeypatch.setattr(settings, "race_items_damage_tail_pct", 5)
-    red = effect_payload("red_shell", _entry(speffect=None))
-    banana = effect_payload("banana", _entry(speffect=None))
+    red = effect_payload("red_shell", _entry())
+    banana = effect_payload("banana", _entry())
     assert red and red.model_dump() == {
         "kind": "damage",
         "base_pct": 20,
@@ -307,21 +307,6 @@ def test_damage_payload_uses_settings(monkeypatch):
         "tail_pct": 5,
     }
     assert banana and banana.base_pct == 10
-
-
-def test_damage_payload_carries_the_seed_explosion(monkeypatch):
-    # A seed whose Red Shell has an effect row (its explosion): the mod
-    # applies it right after the damage. A seed without one keeps the bare
-    # damage shape above, which an older mod reads too.
-    monkeypatch.setattr(settings, "race_items_red_shell_pct", 40)
-    red = effect_payload("red_shell", _entry(speffect=1450825, duration_ms=None))
-    assert red and red.model_dump() == {
-        "kind": "damage",
-        "base_pct": 40,
-        "floor_pct": settings.race_items_damage_floor_pct,
-        "tail_pct": settings.race_items_damage_tail_pct,
-        "speffect_id": 1450825,
-    }
 
 
 def test_damage_settings_are_clamped_to_a_percent(monkeypatch):

@@ -132,12 +132,14 @@ pub enum MachineMessage {
     },
     /// A race item effect aimed at the local runner, applied once the player
     /// is loaded. Without a banner for the runner's own self item, whose
-    /// `ItemResult` carries it.
+    /// `ItemResult` carries it. `impact_speffect_id`: a SpEffect applied once
+    /// right after the effect.
     ItemEffect {
         item: String,
         effect: ItemEffectPayload,
         banner: Option<ItemBanner>,
         reminder: Option<ItemReminder>,
+        impact_speffect_id: Option<u32>,
     },
     /// The outcome of the local runner's item use.
     ItemResult {
@@ -382,15 +384,11 @@ pub enum Effect {
         left_ms: Option<u32>,
     },
     /// Damage the player along the race item damage curve
-    /// (`core::item_damage`), computed from the HP at application, then
-    /// apply the SpEffect `speffect_id` once, as its row says (the Red
-    /// Shell's explosion, which spares the player: the curve is the only
-    /// damage).
+    /// (`core::item_damage`), computed from the HP at application.
     ApplyItemDamage {
         base_pct: u8,
         floor_pct: u8,
         tail_pct: u8,
-        speffect_id: Option<u32>,
     },
     /// Set the SpEffect's max equip load rate so the player's current load
     /// sits at `load_pct` percent of the max (`core::equip_load`), then
@@ -498,6 +496,9 @@ struct PendingItemEffect {
     banner: Option<FeedBanner>,
     icon: String,
     reminder: Option<ItemReminder>,
+    /// Applied once, untimed, right after the action: a loading exit does
+    /// not set it off again.
+    impact_speffect_id: Option<u32>,
 }
 
 // =============================================================================
@@ -1899,6 +1900,7 @@ impl RaceMachine {
                 effect,
                 banner,
                 reminder,
+                impact_speffect_id,
             } => {
                 self.last_received_debug = Some(format!("item_effect({item})"));
                 // A timed effect keeps its duration as the time left of its
@@ -1915,12 +1917,10 @@ impl RaceMachine {
                         base_pct,
                         floor_pct,
                         tail_pct,
-                        speffect_id,
                     } => Some(ItemAction::Shell(Effect::ApplyItemDamage {
                         base_pct,
                         floor_pct,
                         tail_pct,
-                        speffect_id,
                     })),
                     ItemEffectPayload::Ink { duration_ms } => Some(ItemAction::Ink(
                         Duration::from_millis(u64::from(duration_ms)),
@@ -2028,6 +2028,7 @@ impl RaceMachine {
                             banner,
                             icon,
                             reminder,
+                            impact_speffect_id,
                         });
                     }
                     None => {
@@ -3344,6 +3345,14 @@ impl RaceMachine {
                         });
                     }
                 }
+            }
+            // Untimed, so a loading exit does not set it off again.
+            if let Some(speffect_id) = effect.impact_speffect_id {
+                info!(speffect_id, "[ITEMS] Impact applied");
+                effects.push(Effect::ApplySpEffect {
+                    speffect_id,
+                    left_ms: None,
+                });
             }
             if let Some(reminder) = reminder {
                 self.item_feed.add_reminder(
@@ -7729,6 +7738,7 @@ mod tests {
                 text: text.to_string(),
                 duration_ms,
             }),
+            impact_speffect_id: None,
         }
     }
 
@@ -8122,7 +8132,6 @@ mod tests {
                 base_pct: 20,
                 floor_pct: 20,
                 tail_pct: 5,
-                speffect_id: None,
             },
             None,
         );
@@ -8133,15 +8142,34 @@ mod tests {
             base_pct: 20,
             floor_pct: 20,
             tail_pct: 5,
-            speffect_id: None,
         }));
         assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
     }
 
+    /// `hit` with the impact `impact`.
+    fn with_impact(hit: MachineMessage, impact: u32) -> MachineMessage {
+        match hit {
+            MachineMessage::ItemEffect {
+                item,
+                effect,
+                banner,
+                reminder,
+                ..
+            } => MachineMessage::ItemEffect {
+                item,
+                effect,
+                banner,
+                reminder,
+                impact_speffect_id: Some(impact),
+            },
+            other => other,
+        }
+    }
+
     #[test]
-    fn damage_effect_carries_its_explosion_untimed() {
-        // The Red Shell's explosion lands with its damage, applied once: no
-        // timed effect, so a loading exit does not set it off again.
+    fn an_impact_applies_once_right_after_its_effect() {
+        // The Red Shell's explosion lands with its damage, applied once: not
+        // a timed effect, so a loading exit does not set it off again.
         let now = Instant::now();
         let mut m = running_items_machine(now);
         let hit = item_hit(
@@ -8149,19 +8177,35 @@ mod tests {
                 base_pct: 40,
                 floor_pct: 20,
                 tail_pct: 10,
-                speffect_id: Some(1450825),
             },
             None,
         );
-        m.handle_message(hit, now + ms(100));
+        m.handle_message(with_impact(hit, 1450855), now + ms(100));
         let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
-        assert_eq!(item_steps(&fx), ["apply"]);
-        assert!(fx.contains(&Effect::ApplyItemDamage {
-            base_pct: 40,
-            floor_pct: 20,
-            tail_pct: 10,
-            speffect_id: Some(1450825),
-        }));
+        assert_eq!(item_steps(&fx), ["apply", "apply"]);
+        let applied: Vec<&Effect> = fx
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::ApplyItemDamage { .. } | Effect::ApplySpEffect { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            applied,
+            [
+                &Effect::ApplyItemDamage {
+                    base_pct: 40,
+                    floor_pct: 20,
+                    tail_pct: 10,
+                },
+                &Effect::ApplySpEffect {
+                    speffect_id: 1450855,
+                    left_ms: None,
+                },
+            ]
+        );
         // A loading screen, then its exit: nothing is applied again.
         m.tick(
             tick_in(snap(Some(61_000), false), true, None),
@@ -8169,6 +8213,36 @@ mod tests {
         );
         let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(300));
         assert!(!item_steps(&fx).contains(&"apply"), "{fx:?}");
+    }
+
+    #[test]
+    fn a_loading_exit_brings_the_lightning_back_without_its_impact() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(with_impact(lightning_hit(), 1450860), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        let impact = Effect::ApplySpEffect {
+            speffect_id: 1450860,
+            left_ms: None,
+        };
+        assert!(fx.contains(&impact), "{fx:?}");
+        m.tick(
+            tick_in(snap(Some(62_000), false), true, None),
+            now + secs(1),
+        );
+        let fx = m.tick(tick_in(snap(Some(62_000), true), true, None), now + secs(2));
+        // The slow walk comes back with its time left; the impact does not.
+        assert!(
+            fx.iter().any(|e| matches!(
+                e,
+                Effect::ApplySpEffect {
+                    speffect_id: LIGHTNING_FX,
+                    left_ms: Some(_),
+                }
+            )),
+            "{fx:?}"
+        );
+        assert!(!fx.contains(&impact), "{fx:?}");
     }
 
     #[test]
@@ -9163,7 +9237,6 @@ mod tests {
                         base_pct: 20,
                         floor_pct: 20,
                         tail_pct: 5,
-                        speffect_id: None,
                     },
                     Some(("Hit", 15_000)),
                 ),
@@ -9481,6 +9554,7 @@ mod tests {
                 },
                 banner: None,
                 reminder: None,
+                impact_speffect_id: None,
             },
             now + ms(100),
         );
@@ -10629,6 +10703,7 @@ mod tests {
                 text: text.to_string(),
                 duration_ms: 60_000,
             }),
+            impact_speffect_id: None,
         }
     }
 

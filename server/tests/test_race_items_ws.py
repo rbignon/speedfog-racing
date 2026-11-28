@@ -281,6 +281,14 @@ def test_item_effect_payload_dumps_without_nulls():
     }
 
 
+def test_item_effect_dumps_its_impact_only_when_it_has_one():
+    effect = ItemEffectPayload(kind="damage", base_pct=40, floor_pct=20, tail_pct=10)
+    plain = json.loads(ItemEffectMessage(item="banana", effect=effect).model_dump_json())
+    assert "impact_speffect_id" not in plain
+    hit = ItemEffectMessage(item="red_shell", effect=effect, impact_speffect_id=1450855)
+    assert json.loads(hit.model_dump_json())["impact_speffect_id"] == 1450855
+
+
 def test_race_item_catalog_dumps_empty_as_an_empty_object():
     assert json.loads(RaceItemCatalogWire().model_dump_json()) == {}
     # A catalog with goods keeps both keys, an empty one included.

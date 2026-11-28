@@ -814,6 +814,7 @@ fn message_loop(
                             effect,
                             banner,
                             reminder,
+                            impact_speffect_id,
                         } => {
                             if incoming_tx
                                 .send(MachineMessage::ItemEffect {
@@ -821,6 +822,7 @@ fn message_loop(
                                     effect,
                                     banner,
                                     reminder,
+                                    impact_speffect_id,
                                 })
                                 .is_err()
                             {

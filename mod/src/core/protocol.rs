@@ -472,15 +472,11 @@ pub enum ItemEffectPayload {
         #[serde(default)]
         duration_ms: Option<u32>,
     },
-    /// Damage by percent of max HP, following the floor/tail curve, then
-    /// the SpEffect `speffect_id` when the seed gives the item one (the Red
-    /// Shell's explosion; absent from older servers and seeds).
+    /// Damage by percent of max HP, following the floor/tail curve.
     Damage {
         base_pct: u8,
         floor_pct: u8,
         tail_pct: u8,
-        #[serde(default)]
-        speffect_id: Option<u32>,
     },
     /// Hide exit destinations for a duration.
     Ink { duration_ms: u32 },
@@ -671,6 +667,9 @@ pub enum ServerMessage {
     },
     /// A race item effect hits the local player. Without a banner for the
     /// player's own self item, whose `item_result` carries it.
+    /// `impact_speffect_id` is a SpEffect applied once after the effect (the
+    /// Red Shell's and the Lightning's explosion, the Banana's slip; absent
+    /// from older servers and seeds).
     ItemEffect {
         item: String,
         effect: ItemEffectPayload,
@@ -678,6 +677,8 @@ pub enum ServerMessage {
         banner: Option<ItemBanner>,
         #[serde(default)]
         reminder: Option<ItemReminder>,
+        #[serde(default)]
+        impact_speffect_id: Option<u32>,
     },
     /// Outcome shown to the player who used an item.
     ItemResult {
@@ -1965,18 +1966,19 @@ mod tests {
                 effect,
                 banner,
                 reminder,
+                impact_speffect_id,
             } => {
                 assert_eq!(item, "red_shell");
-                // An older server's shape, and a seed without an explosion.
                 assert_eq!(
                     effect,
                     ItemEffectPayload::Damage {
                         base_pct: 20,
                         floor_pct: 20,
-                        tail_pct: 5,
-                        speffect_id: None,
+                        tail_pct: 5
                     }
                 );
+                // An older server's shape, and a seed without an impact.
+                assert_eq!(impact_speffect_id, None);
                 let banner = banner.expect("a hit carries its banner");
                 assert_eq!(banner.title, "Red Shell");
                 assert_eq!(banner.detail, "from Gideohana");
@@ -1987,22 +1989,17 @@ mod tests {
     }
 
     #[test]
-    fn item_effect_damage_carries_its_explosion() {
+    fn item_effect_carries_its_impact() {
         let msg: ServerMessage = serde_json::from_str(
             r#"{"type":"item_effect","item":"red_shell",
-            "effect":{"kind":"damage","base_pct":40,"floor_pct":20,"tail_pct":10,"speffect_id":1450825}}"#,
+            "effect":{"kind":"damage","base_pct":40,"floor_pct":20,"tail_pct":10},
+            "impact_speffect_id":1450855}"#,
         )
         .unwrap();
         match msg {
-            ServerMessage::ItemEffect { effect, .. } => assert_eq!(
-                effect,
-                ItemEffectPayload::Damage {
-                    base_pct: 40,
-                    floor_pct: 20,
-                    tail_pct: 10,
-                    speffect_id: Some(1450825),
-                }
-            ),
+            ServerMessage::ItemEffect {
+                impact_speffect_id, ..
+            } => assert_eq!(impact_speffect_id, Some(1450855)),
             other => panic!("unexpected {other:?}"),
         }
     }
