@@ -382,11 +382,15 @@ pub enum Effect {
         left_ms: Option<u32>,
     },
     /// Damage the player along the race item damage curve
-    /// (`core::item_damage`), computed from the HP at application.
+    /// (`core::item_damage`), computed from the HP at application, then
+    /// apply the SpEffect `speffect_id` once, as its row says (the Red
+    /// Shell's explosion, which spares the player: the curve is the only
+    /// damage).
     ApplyItemDamage {
         base_pct: u8,
         floor_pct: u8,
         tail_pct: u8,
+        speffect_id: Option<u32>,
     },
     /// Set the SpEffect's max equip load rate so the player's current load
     /// sits at `load_pct` percent of the max (`core::equip_load`), then
@@ -1911,10 +1915,12 @@ impl RaceMachine {
                         base_pct,
                         floor_pct,
                         tail_pct,
+                        speffect_id,
                     } => Some(ItemAction::Shell(Effect::ApplyItemDamage {
                         base_pct,
                         floor_pct,
                         tail_pct,
+                        speffect_id,
                     })),
                     ItemEffectPayload::Ink { duration_ms } => Some(ItemAction::Ink(
                         Duration::from_millis(u64::from(duration_ms)),
@@ -8116,6 +8122,7 @@ mod tests {
                 base_pct: 20,
                 floor_pct: 20,
                 tail_pct: 5,
+                speffect_id: None,
             },
             None,
         );
@@ -8126,8 +8133,42 @@ mod tests {
             base_pct: 20,
             floor_pct: 20,
             tail_pct: 5,
+            speffect_id: None,
         }));
         assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
+    }
+
+    #[test]
+    fn damage_effect_carries_its_explosion_untimed() {
+        // The Red Shell's explosion lands with its damage, applied once: no
+        // timed effect, so a loading exit does not set it off again.
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let hit = item_hit(
+            ItemEffectPayload::Damage {
+                base_pct: 40,
+                floor_pct: 20,
+                tail_pct: 10,
+                speffect_id: Some(1450825),
+            },
+            None,
+        );
+        m.handle_message(hit, now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(item_steps(&fx), ["apply"]);
+        assert!(fx.contains(&Effect::ApplyItemDamage {
+            base_pct: 40,
+            floor_pct: 20,
+            tail_pct: 10,
+            speffect_id: Some(1450825),
+        }));
+        // A loading screen, then its exit: nothing is applied again.
+        m.tick(
+            tick_in(snap(Some(61_000), false), true, None),
+            now + ms(200),
+        );
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(300));
+        assert!(!item_steps(&fx).contains(&"apply"), "{fx:?}");
     }
 
     #[test]
@@ -9122,6 +9163,7 @@ mod tests {
                         base_pct: 20,
                         floor_pct: 20,
                         tail_pct: 5,
+                        speffect_id: None,
                     },
                     Some(("Hit", 15_000)),
                 ),

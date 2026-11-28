@@ -666,11 +666,14 @@ def effect_payload(
             duration_ms=entry.duration_ms,
         )
     if kind == "damage":
+        # The seed's effect row, when the item has one (the Red Shell's
+        # explosion): the mod applies it right after the damage.
         return ItemEffectPayload(
             kind="damage",
             base_pct=_damage_pct(key),
             floor_pct=_percent(settings.race_items_damage_floor_pct),
             tail_pct=_percent(settings.race_items_damage_tail_pct),
+            speffect_id=entry.effect_speffect,
         )
     if kind == "ink":
         return ItemEffectPayload(kind="ink", duration_ms=entry.duration_ms)

@@ -472,11 +472,15 @@ pub enum ItemEffectPayload {
         #[serde(default)]
         duration_ms: Option<u32>,
     },
-    /// Damage by percent of max HP, following the floor/tail curve.
+    /// Damage by percent of max HP, following the floor/tail curve, then
+    /// the SpEffect `speffect_id` when the seed gives the item one (the Red
+    /// Shell's explosion; absent from older servers and seeds).
     Damage {
         base_pct: u8,
         floor_pct: u8,
         tail_pct: u8,
+        #[serde(default)]
+        speffect_id: Option<u32>,
     },
     /// Hide exit destinations for a duration.
     Ink { duration_ms: u32 },
@@ -1963,12 +1967,14 @@ mod tests {
                 reminder,
             } => {
                 assert_eq!(item, "red_shell");
+                // An older server's shape, and a seed without an explosion.
                 assert_eq!(
                     effect,
                     ItemEffectPayload::Damage {
                         base_pct: 20,
                         floor_pct: 20,
-                        tail_pct: 5
+                        tail_pct: 5,
+                        speffect_id: None,
                     }
                 );
                 let banner = banner.expect("a hit carries its banner");
@@ -1976,6 +1982,27 @@ mod tests {
                 assert_eq!(banner.detail, "from Gideohana");
                 assert_eq!(reminder, None);
             }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn item_effect_damage_carries_its_explosion() {
+        let msg: ServerMessage = serde_json::from_str(
+            r#"{"type":"item_effect","item":"red_shell",
+            "effect":{"kind":"damage","base_pct":40,"floor_pct":20,"tail_pct":10,"speffect_id":1450825}}"#,
+        )
+        .unwrap();
+        match msg {
+            ServerMessage::ItemEffect { effect, .. } => assert_eq!(
+                effect,
+                ItemEffectPayload::Damage {
+                    base_pct: 40,
+                    floor_pct: 20,
+                    tail_pct: 10,
+                    speffect_id: Some(1450825),
+                }
+            ),
             other => panic!("unexpected {other:?}"),
         }
     }

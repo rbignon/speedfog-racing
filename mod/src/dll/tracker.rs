@@ -898,7 +898,13 @@ impl RaceTracker {
                     base_pct,
                     floor_pct,
                     tail_pct,
-                } => Self::apply_item_damage(base_pct, floor_pct, tail_pct),
+                    speffect_id,
+                } => {
+                    Self::apply_item_damage(base_pct, floor_pct, tail_pct);
+                    if let Some(speffect_id) = speffect_id {
+                        Self::apply_item_speffect(speffect_id, None);
+                    }
+                }
                 Effect::ApplyEquipLoad {
                     speffect_id,
                     load_pct,
